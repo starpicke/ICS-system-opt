@@ -1,0 +1,17 @@
+QGroupBox {
+    font: bold 13px "Segoe UI";
+    color: #34495e;
+    background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+                              stop: 0 #ffffff, stop: 1 #f1f8ff);
+    border: 1px solid #bdc3c7;
+    border-radius: 6px;
+    margin-top: 12px;
+    padding-top: 12px;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 0px 12px;
+    color: blue;
+    border-radius: 6px;
+}

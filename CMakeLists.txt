@@ -27,6 +27,9 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         icon.qrc
         style.qss
         OptionalCanFeatures.cpp OptionalCanFeatures.hpp
+        CANBitTiming.cpp CANBitTiming.h
+        CANBitTiming.cpp CANBitTiming.h
+        CANBitTiming.cpp
 
 
 

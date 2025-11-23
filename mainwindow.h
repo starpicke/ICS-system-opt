@@ -5,6 +5,7 @@
 #include <QStandardItemModel>
 #include "addbaud.h"
 
+
 QT_BEGIN_NAMESPACE
 namespace Ui {
 class MainWindow;
@@ -33,6 +34,8 @@ private slots:
     void on_ChooseBaudcomboBox_currentIndexChanged(int index);
 
     void onBaudComboContextMenu(const QPoint &pos);
+
+    void on_RunButton3_clicked();
 
 private:
     Ui::MainWindow *ui;

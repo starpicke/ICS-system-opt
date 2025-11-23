@@ -4,6 +4,8 @@
 #include <QMessageBox>
 #include <float.h>
 #include <QInputDialog>
+#include "CANBitTiming.h"
+#include "OptionalCanFeatures.hpp"
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -224,7 +226,7 @@ void MainWindow::calculateOptimalBaudRate()
     qDebug() << "推荐波特率:" << recommendedBaudRate << "bps";
     qDebug() << "实际负载率:" << optimalLoadRate << "%";
 }
-// 计算单帧比特数（保持不变）
+// 计算单帧比特数
 int MainWindow::calculateFrameBits(const BaudRate &data)
 {
     int baseBits = 0;
@@ -256,7 +258,7 @@ void MainWindow::on_ChooseBaudcomboBox_currentIndexChanged(int index)
         ui->ChooseBaudcomboBox->blockSignals(true);
         // 弹窗输入
         bool ok;
-        int baudRate = QInputDialog::getInt(this, "自定义波特率", "请输入波特率:", 9600, 1, 9999999, 1, &ok);
+        int baudRate = QInputDialog::getInt(this, "自定义波特率", "请输入波特率:", 9600, 1, 400000000, 1, &ok);
 
         if (ok) {
             // 检查是否已存在相同波特率
@@ -272,7 +274,7 @@ void MainWindow::on_ChooseBaudcomboBox_currentIndexChanged(int index)
                 ui->ChooseBaudcomboBox->setCurrentText(QString::number(baudRate));
             } else {
                 // 不存在才添加
-                ui->ChooseBaudcomboBox->insertItem(ui->ChooseBaudcomboBox->count()-1, QString::number(baudRate));
+                ui->ChooseBaudcomboBox->insertItem(ui->ChooseBaudcomboBox->count()-1, QString::number(baudRate/1000)+" kbps");
                 ui->ChooseBaudcomboBox->setCurrentText(QString::number(baudRate));
             }
         } else {
@@ -293,4 +295,51 @@ void MainWindow::onBaudComboContextMenu(const QPoint &pos) {
             ui->ChooseBaudcomboBox->removeItem(index);
         }
     }
+}
+
+
+
+void MainWindow::on_RunButton3_clicked()
+{
+    int baudindex = ui->ChooseBaudcomboBox->currentIndex();
+    QString baudText = ui->ChooseBaudcomboBox->currentText().replace(" kbps","");
+    int baudValue = 0;  // 先定义
+
+    switch (baudindex) {
+    case 0:  // 理想波特率
+        baudValue = ui->PBaudlineEdit->text().replace(" kbps", "").toDouble() * 1000;
+        break;
+    case 1:  // 另一个波特率
+        baudValue = ui->RBaudlineEdit->text().replace(" kbps", "").toDouble() * 1000;
+        break;
+    default: // 自定义的值
+        baudValue = baudText.toInt()*1000;
+        break;
+    }
+
+    int clock = ui->CLKbox->value()*1000000;
+
+    canopt::BitTimingInput input;
+    input.systemClock = clock;
+    input.targetBaudRate = baudValue;
+    input.maxErrorPercent = 5.0;
+
+    qDebug() << "计算成功" << baudValue << clock;
+    auto result = canopt::CalculateBitTiming(input);
+
+    // 4. 在Qt界面上显示结果
+    if (result.calculationSuccess) {
+
+        ui->BRPtext->setText(QString::number(result.BRP));
+        ui->SJWtext->setText(QString::number(result.SJW));
+        ui->TSEG1text->setText(QString::number(result.TSEG1));
+        ui->TSEG2text->setText(QString::number(result.TSEG2));
+        ui->btrRegisterLabel->setText("0x" + QString::number(result.btrRegister, 16).toUpper());
+        ui->statuslabel->setText("✅计算成功 - 误差: " + QString::number(result.errorPercent, 'f', 2) + "%");
+    } else {
+        ui->statuslabel->setText("❌错误: " + QString::fromStdString(result.statusMessage));
+    }
+
+
+    //ui->BRPtext->setPlainText(QString::number(baudValue));
 }
