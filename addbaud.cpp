@@ -24,7 +24,7 @@ BaudRate AddBaud::getBaudRateData() const
     data.DataByte = ui->DataNumspinBox->value();
     data.SendTime = ui->TdoubleSpinBox->value();
     data.Node = ui->NodespinBox->value();
-    data.MaxLenth = ui->LengthdoubleSpinBox->value();
+    data.MaxLenth = ui->Lengthbox->value();
 
     return data;
 }
@@ -37,7 +37,7 @@ void AddBaud::setBaudRateData(const BaudRate &data)
     ui->DataNumspinBox->setValue(data.DataByte);
     ui->TdoubleSpinBox->setValue(data.SendTime);
     ui->NodespinBox->setValue(data.Node);
-    ui->LengthdoubleSpinBox->setValue(data.MaxLenth);
+    ui->Lengthbox->setValue(data.MaxLenth);
 }
 
 void AddBaud::handleAccepted()

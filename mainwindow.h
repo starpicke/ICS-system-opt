@@ -28,6 +28,11 @@ private slots:
 
     void calculateOptimalBaudRate();  // 计算最佳波特率
 
+    void on_Next1Button_clicked();
+
+    void on_ChooseBaudcomboBox_currentIndexChanged(int index);
+
+    void onBaudComboContextMenu(const QPoint &pos);
 
 private:
     Ui::MainWindow *ui;

@@ -26,6 +26,9 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         addbaud.h addbaud.cpp addbaud.ui
         icon.qrc
         style.qss
+        OptionalCanFeatures.cpp OptionalCanFeatures.hpp
+
+
 
 
     )
