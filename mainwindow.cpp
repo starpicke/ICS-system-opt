@@ -30,6 +30,26 @@ MainWindow::MainWindow(QWidget *parent)
         "}"
         );
 
+    // 初始化节点表格模型
+    m_nodeModel = new QStandardItemModel(this);
+    QStringList nodeHeaders;
+    nodeHeaders << "节点名称" << "X坐标" << "Y坐标" << "使用消息数量" << "消息列表";
+    m_nodeModel->setHorizontalHeaderLabels(nodeHeaders);
+    ui->NodetableView->setModel(m_nodeModel);  // 假设你的tabView中有一个nodeTableView
+    ui->NodetableView->setSelectionBehavior(QAbstractItemView::SelectRows);
+    ui->NodetableView->horizontalHeader()->setStyleSheet(
+        "QHeaderView::section {"
+        "    background-color: #6E7BA5;"
+        "    color: white;"
+        "    font-weight: bold;"
+        "    padding: 6px;"
+        "    border: 1px solid #34495e;"
+        "}"
+        );
+
+    // 连接节点表格的双击信号
+    connect(ui->NodetableView, &QTableView::doubleClicked, this, &MainWindow::onNodeDoubleClicked);
+
     connect(ui->CalculateButton, &QPushButton::clicked, this, &MainWindow::calculateOptimalBaudRate);
     ui->ChooseBaudcomboBox->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(ui->ChooseBaudcomboBox, &QComboBox::customContextMenuRequested, this, &MainWindow::onBaudComboContextMenu);
@@ -343,3 +363,249 @@ void MainWindow::on_RunButton3_clicked()
 
     //ui->BRPtext->setPlainText(QString::number(baudValue));
 }
+
+
+void MainWindow::on_AddNodebutton_clicked()
+{
+    // 获取所有可用的消息名称
+    QVector<QString> messageNames = getAvailableMessageNames();
+
+    addNode *nodeDialog = new addNode (messageNames);
+    connect(nodeDialog, &addNode::nodeDataAdded, this, &MainWindow::onNodeDataAdded);
+    nodeDialog->show(); // 使用 show() 而不是 exec()，因为 addNode 继承自 QWidget
+}
+
+QVector<QString> MainWindow::getAvailableMessageNames() const
+{
+    QVector<QString> names;
+    for (const BaudRate &baud : m_baudRateList) {
+        names.append(baud.Name);
+    }
+    return names;
+}
+
+void MainWindow::onNodeDataAdded(const NodeInfo &nodeData)
+{
+    m_nodeList.append(nodeData);
+
+    refreshNodeTable();
+    // 这里可以更新UI显示节点列表
+    qDebug() << "添加节点:" << nodeData.nodeName
+             << "位置: (" << nodeData.xCoordinate << "," << nodeData.yCoordinate << ")"
+             << "选中消息数:" << nodeData.selectedMessages.size();
+
+    // 打印选中的消息名称
+    for (const QString &messageName : nodeData.selectedMessages) {
+        qDebug() << "  - " << messageName;
+    }
+}
+
+// 刷新节点表格显示
+void MainWindow::refreshNodeTable()
+{
+    m_nodeModel->removeRows(0, m_nodeModel->rowCount());
+
+    for (const NodeInfo &node : m_nodeList) {
+        QList<QStandardItem*> rowItems;
+
+        // 节点名称
+        rowItems << new QStandardItem(node.nodeName);
+
+        // X坐标
+        rowItems << new QStandardItem(QString::number(node.xCoordinate, 'f', 2));
+
+        // Y坐标
+        rowItems << new QStandardItem(QString::number(node.yCoordinate, 'f', 2));
+
+        // 使用消息数量
+        rowItems << new QStandardItem(QString::number(node.selectedMessages.size()));
+
+        // 消息列表（用逗号分隔）
+        QString messagesStr = node.selectedMessages.join(", ");
+        rowItems << new QStandardItem(messagesStr);
+
+        m_nodeModel->appendRow(rowItems);
+    }
+
+    // 调整列宽
+    ui->NodetableView->resizeColumnsToContents();
+}
+
+// 节点表格双击事件
+void MainWindow::onNodeDoubleClicked(const QModelIndex &index)
+{
+    if (index.isValid()) {
+        editNode(index.row());
+    }
+}
+
+// 编辑节点
+void MainWindow::editNode(int row)
+{
+    if (row < 0 || row >= m_nodeList.size())
+        return;
+
+    // 获取要编辑的节点数据
+    NodeInfo originalData = m_nodeList[row];
+
+    // 获取所有可用的消息名称
+    QVector<QString> messageNames = getAvailableMessageNames();
+
+    // 创建编辑对话框
+    addNode *editDialog = new addNode(messageNames);
+
+    // 设置当前数据到对话框
+    editDialog->setNodeData(originalData);
+
+    // 连接信号 - 使用lambda捕获行索引
+    connect(editDialog, &addNode::nodeDataAdded, this, [this, row](const NodeInfo &updatedData) {
+        // 更新数据向量
+        m_nodeList[row] = updatedData;
+
+        // 更新表格显示
+        refreshNodeTable();
+
+        qDebug() << "更新节点:" << updatedData.nodeName
+                 << "位置: (" << updatedData.xCoordinate << "," << updatedData.yCoordinate << ")"
+                 << "使用消息数:" << updatedData.selectedMessages.size();
+    });
+
+    editDialog->show();
+}
+
+
+
+
+
+
+// 斜率控制
+void MainWindow::on_slopeCalculateButton_clicked()
+{
+    // 检查必要的UI组件是否存在
+    if (!ui->slopeBaudRateSpinBox || !ui->slopeRiseTimeSpinBox ||
+        !ui->slopeCapacitanceSpinBox || !ui->slopeCableLengthSpinBox) {
+        QMessageBox::warning(this, "错误", "斜率控制UI组件未找到");
+        return;
+    }
+
+    // 获取输入值
+    uint32_t baudrate = static_cast<uint32_t>(ui->slopeBaudRateSpinBox->value() * 1000);
+    double targetRiseTime = ui->slopeRiseTimeSpinBox->value();
+    double capacitance = ui->slopeCapacitanceSpinBox->value();
+    double cableLength = ui->slopeCableLengthSpinBox->value();
+
+    // 准备输入参数
+    canopt1::SlopeControlInput input;
+    input.baudrate = baudrate;
+    input.targetRiseTimeNs = targetRiseTime;
+    input.loadCapacitancePf = capacitance;
+    input.cableLengthMeters = cableLength;
+    input.maxRiseTimeRatio = 0.1;
+
+    // 调用计算函数
+    auto result = canopt1::CalculateSlopeControl(input);
+
+    // 显示计算结果
+    if (result.calculationSuccess) {
+        // 更新结果显示
+        if (ui->slopeResistorResultLabel) {
+            ui->slopeResistorResultLabel->setText(QString::number(result.recommendedResistorOhm, 'f', 1) + " Ω");
+        }
+
+        if (ui->slopeActualRiseTimeLabel) {
+            ui->slopeActualRiseTimeLabel->setText(QString::number(result.actualRiseTimeNs, 'f', 1) + " ns");
+        }
+
+        if (ui->slopeModeLabel) {
+            ui->slopeModeLabel->setText(QString::fromStdString(result.recommendedMode));
+        }
+
+        if (ui->slopeStatusLabel) {
+            QString status = result.isSuitable ? "✅ 满足时序要求" : "⚠️ 时序要求可能不满足";
+            ui->slopeStatusLabel->setText(status);
+        }
+
+        // 显示成功消息
+        QMessageBox::information(this, "计算成功",
+                                 QString("斜率控制电阻计算完成！\n\n"
+                                         "推荐电阻: %1 Ω\n"
+                                         "推荐模式: %2\n"
+                                         "实际上升时间: %3 ns")
+                                     .arg(result.recommendedResistorOhm, 0, 'f', 1)
+                                     .arg(QString::fromStdString(result.recommendedMode))
+                                     .arg(result.actualRiseTimeNs, 0, 'f', 1));
+
+    } else {
+        // 计算失败
+        QMessageBox::warning(this, "计算失败",
+                             QString::fromStdString(result.statusMessage));
+
+        if (ui->slopeStatusLabel) {
+            ui->slopeStatusLabel->setText("❌ " + QString::fromStdString(result.statusMessage));
+        }
+    }
+}
+
+// 点击按钮生成网络设计
+void MainWindow::on_calnetworkbutton_clicked()
+{
+    if (m_nodeList.isEmpty()) {
+        qDebug() << "节点列表为空！";
+        return;
+    }
+
+    // 1. 转换 QVector<NodeInfo> -> std::vector<IndustrialNet::Node>
+    std::vector<IndustrialNet::Node> nodes;
+    for (int i = 0; i < m_nodeList.size(); ++i) {
+        IndustrialNet::Node n;
+        n.id = i;  // 使用索引作为节点ID
+        n.x = m_nodeList[i].xCoordinate;
+        n.y = m_nodeList[i].yCoordinate;
+        nodes.push_back(n);
+    }
+
+    // 2. 调用 NetworkDesigner
+    IndustrialNet::NetworkDesigner designer;
+    IndustrialNet::DesignResult result = designer.designNetwork(nodes);
+
+    // 3. 用 qDebug 输出报告
+    qDebug() << "=== 网络设计报告 ===";
+    for (auto &seg : result.segments) {
+        IndustrialNet::Node startNode = nodes[seg.node_ids.front()];
+        IndustrialNet::Node endNode = nodes[seg.node_ids.back()];
+
+        QString nodeIds;
+        for (size_t i = 0; i < seg.node_ids.size(); ++i) {
+            nodeIds += QString::number(seg.node_ids[i]);
+            if (i != seg.node_ids.size() - 1) nodeIds += ", ";
+        }
+
+        qDebug() << "网段" << seg.id << ": 节点数 =" << seg.node_ids.size()
+                 << "[" << nodeIds << "]";
+        qDebug() << "  起点坐标 = (" << startNode.x << "," << startNode.y << "), "
+                 << "终点坐标 = (" << endNode.x << "," << endNode.y << ")";
+    }
+
+    auto &dev = result.devices;
+
+    qDebug() << "终端电阻位置:";
+    for (auto &pos : dev.terminator_positions)
+        qDebug() << "  (" << pos.first << "," << pos.second << ")";
+
+    qDebug() << "中继器位置:";
+    for (auto &pos : dev.repeater_positions)
+        qDebug() << "  (" << pos.first << "," << pos.second << ")";
+
+    qDebug() << "网桥位置:";
+    for (auto &pos : dev.bridge_positions)
+        qDebug() << "  (" << pos.first << "," << pos.second << ")";
+
+    qDebug() << "节点接收显性电平:";
+    for (auto &p : result.node_receive_ok)
+        qDebug() << "  节点" << p.first << ":" << (p.second ? "OK" : "FAIL");
+
+    qDebug() << "总体网络状态:" << (result.overall_ok ? "OK" : "FAIL");
+    for (auto &log : result.logs)
+        qDebug() << log;
+}
+

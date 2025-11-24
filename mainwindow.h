@@ -4,6 +4,12 @@
 #include <QMainWindow>
 #include <QStandardItemModel>
 #include "addbaud.h"
+#include "addnode.h"
+#include <QLabel>
+#include <QDoubleSpinBox>
+#include <QPushButton>
+#include <QTextEdit>
+#include "NetworkDesigner.h"
 
 
 QT_BEGIN_NAMESPACE
@@ -37,16 +43,35 @@ private slots:
 
     void on_RunButton3_clicked();
 
+    //添加节点
+    void onNodeDataAdded(const NodeInfo &nodeData);
+    void on_AddNodebutton_clicked();
+    void onNodeDoubleClicked(const QModelIndex &index);
+    void editNode(int row);
+    void refreshNodeTable();
+
+    void on_calnetworkbutton_clicked();
+
+    void on_slopeCalculateButton_clicked();
+
 private:
     Ui::MainWindow *ui;
 
+    //信号信息
     AddBaud *m_addBaudDialog;
     QStandardItemModel *m_tableModel;
     QVector<BaudRate> m_baudRateList;
+
+    //节点信息
+    QVector<NodeInfo> m_nodeList;  // 存储所有节点
+    QStandardItemModel *m_nodeModel;
+    QVector<QString> getAvailableMessageNames() const;
+
     void updateTableView();
     void editBaudRate(int row);
 
     float calculateBusLoad(float baudRate);  // 计算总线负载
     int calculateFrameBits(const BaudRate &data);  // 计算单帧比特数
+
 };
 #endif // MAINWINDOW_H

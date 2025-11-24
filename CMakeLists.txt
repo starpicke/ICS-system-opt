@@ -30,6 +30,8 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         CANBitTiming.cpp CANBitTiming.h
         CANBitTiming.cpp CANBitTiming.h
         CANBitTiming.cpp
+        addnode.h addnode.cpp addnode.ui
+        NetworkDesigner.cpp NetworkDesigner.h
 
 
 

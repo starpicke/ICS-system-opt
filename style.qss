@@ -15,3 +15,30 @@ QGroupBox::title {
     color: blue;
     border-radius: 6px;
 }
+
+
+/* 基础TableView样式 */
+QTableView {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    gridline-color: #e9ecef;
+    outline: none;
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+/* 交替行颜色 */
+QTableView::item:alternate {
+    background-color: #e8e8e8;
+}
+
+/* 选中行样式 */
+QTableView::item:selected {
+    background-color: #007bff;
+    color: white;
+}
+
+/* 悬停效果 */
+QTableView::item:hover {
+    background-color: #e9ecef;
+}
