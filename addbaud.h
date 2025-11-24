@@ -14,6 +14,7 @@ struct BaudRate{
     float SendTime;//周期
     int Node;//节点数
     float MaxLenth;//最远距离
+    int Priority;
 };
 
 class AddBaud : public QWidget

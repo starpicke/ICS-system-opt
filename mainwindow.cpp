@@ -16,7 +16,7 @@ MainWindow::MainWindow(QWidget *parent)
     // 初始化ListView模型
     m_tableModel = new QStandardItemModel(this);
     QStringList headers;
-    headers << "名称" << "帧类型" << "数据字节" << "发送时间" << "节点数" << "最大长度";
+    headers << "名称" << "帧类型" << "数据字节" << "发送时间" << "优先级" << "节点数" << "最大长度";
     m_tableModel->setHorizontalHeaderLabels(headers);
     ui->tableView->setModel(m_tableModel);  // 确保UI中有tableView
     ui->tableView->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -80,8 +80,10 @@ void MainWindow::onBaudDataAdded(const BaudRate &data)
     rowItems << new QStandardItem(frameTypeText);
     rowItems << new QStandardItem(QString::number(data.DataByte)+"byte");
     rowItems << new QStandardItem(QString::number(data.SendTime)+"ms");
+    rowItems << new QStandardItem(QString::number(data.Priority));
     rowItems << new QStandardItem(QString::number(data.Node));
     rowItems << new QStandardItem(QString::number(data.MaxLenth)+"m");
+
 
     m_tableModel->appendRow(rowItems);
 }
@@ -132,8 +134,9 @@ void MainWindow::editBaudRate(int row)
         m_tableModel->item(row, 1)->setText(frameTypeText);
         m_tableModel->item(row, 2)->setText(QString::number(updatedData.DataByte)+"byte");
         m_tableModel->item(row, 3)->setText(QString::number(updatedData.SendTime)+"ms");
-        m_tableModel->item(row, 4)->setText(QString::number(updatedData.Node));
-        m_tableModel->item(row, 5)->setText(QString::number(updatedData.MaxLenth)+"m");
+        m_tableModel->item(row, 4)->setText(QString::number(updatedData.Priority));
+        m_tableModel->item(row, 5)->setText(QString::number(updatedData.Node));
+        m_tableModel->item(row, 6)->setText(QString::number(updatedData.MaxLenth)+"m");
     }, Qt::AutoConnection);
     editDialog->show();
 }
