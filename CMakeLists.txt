@@ -33,6 +33,8 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         addnode.h addnode.cpp addnode.ui
         NetworkDesigner.cpp NetworkDesigner.h
 
+        CanIdFilterLib.cpp CanIdFilterLib.h
+
 
 
 

@@ -35,12 +35,16 @@ public:
 signals:
     void nodeDataAdded(const NodeInfo &nodeData);
 
+    void multipleNodesAdded(const QVector<NodeInfo> &nodesData);
+
 private slots:
     void onListItemChanged(QListWidgetItem *item);
 
     void on_buttonBox_accepted();
 
     void on_buttonBox_rejected();
+
+    void on_autosetBox_toggled(bool checked);
 
 private:
     void setupUI();
@@ -50,6 +54,8 @@ private:
     Ui::addNode *ui;
     QVector<QString> m_availableMessages;
     NodeInfo m_currentNodeData;
+
+    QVector<NodeInfo> generateMatrixNodes();
 };
 
 #endif // ADDNODE_H

@@ -3,6 +3,7 @@
 #include <cmath>
 #include <algorithm>
 #include <iostream>
+#include <sstream>
 
 namespace IndustrialNet {
 
@@ -14,6 +15,30 @@ namespace IndustrialNet {
         return std::sqrt((x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2));
     }
 
+    double NetworkDesigner::segmentLengthAlongNodes(const std::vector<Node>& nodes, const Segment& seg) const {
+        if (seg.node_ids.size() < 2) return 0.0;
+        double sum = 0.0;
+        for (size_t i = 1; i < seg.node_ids.size(); ++i) {
+            const Node& a = nodes[seg.node_ids[i - 1]];
+            const Node& b = nodes[seg.node_ids[i]];
+            sum += distance2D(a.x, a.y, b.x, b.y);
+        }
+        return sum;
+    }
+
+    double NetworkDesigner::estimateReceivedVoltage(double Vout, double segment_length_m, int n_nodes_on_segment) const {
+        double Rw = p_.Rw_factor * segment_length_m;
+        double Rt = p_.termination_impedance_ohm;
+        double RL = p_.RL_ohm;
+        int n = std::max(1, n_nodes_on_segment);
+
+        double inner = (1.0 / Rt) - (double)(n - 1) / RL;
+        double denom = 1.0 + 2.0 * Rw * inner;
+        if (denom <= 0.0) return 0.0;
+
+        return Vout / denom;
+    }
+
     std::vector<Segment> NetworkDesigner::partitionIntoSegments(const std::vector<Node>& nodes) {
         std::vector<Segment> segments;
         if (nodes.empty()) return segments;
@@ -21,19 +46,20 @@ namespace IndustrialNet {
         Segment seg;
         seg.id = 0;
         Node startNode = nodes[0];
-        seg.start_pos_m = 0;
 
         for (size_t i = 0; i < nodes.size(); ++i) {
-            double dist = distance2D(startNode.x, startNode.y, nodes[i].x, nodes[i].y);
+            double dist_from_start = distance2D(startNode.x, startNode.y, nodes[i].x, nodes[i].y);
 
             if (!seg.node_ids.empty() &&
-                (seg.node_ids.size() >= size_t(p_.max_nodes_per_segment) || dist > p_.max_segment_length_m)) {
-                seg.end_pos_m = distance2D(startNode.x, startNode.y, nodes[seg.node_ids.back()].x, nodes[seg.node_ids.back()].y);
-                segments.push_back(seg);
+                (seg.node_ids.size() >= size_t(p_.max_nodes_per_segment) || dist_from_start > p_.max_segment_length_m)) {
 
+                if (!seg.node_ids.empty()) {
+                    seg.start_pos_m = 0.0;
+                    seg.end_pos_m = segmentLengthAlongNodes(nodes, seg);
+                    segments.push_back(seg);
+                }
                 seg = Segment();
                 seg.id = int(segments.size());
-                seg.start_pos_m = 0;
                 startNode = nodes[i];
             }
 
@@ -41,103 +67,160 @@ namespace IndustrialNet {
         }
 
         if (!seg.node_ids.empty()) {
-            seg.end_pos_m = distance2D(startNode.x, startNode.y, nodes[seg.node_ids.back()].x, nodes[seg.node_ids.back()].y);
+            seg.start_pos_m = 0.0;
+            seg.end_pos_m = segmentLengthAlongNodes(nodes, seg);
             segments.push_back(seg);
         }
 
         return segments;
     }
 
+    void NetworkDesigner::refineSegmentsByVin(const std::vector<Node>& nodes, std::vector<Segment>& segs) {
+        bool changed = false;
+        std::vector<Segment> newSegs;
+
+        for (auto& s : segs) {
+            double segLen = segmentLengthAlongNodes(nodes, s);
+            int n = int(s.node_ids.size());
+            double Vin = estimateReceivedVoltage(p_.driver_peak_voltage_v, segLen, n);
+
+            if (Vin >= p_.required_min_receive_v || n <= 1) {
+                newSegs.push_back(s);
+                continue;
+            }
+
+            changed = true;
+            size_t mid = n / 2;
+            Segment a; a.id = int(newSegs.size());
+            a.node_ids.insert(a.node_ids.end(), s.node_ids.begin(), s.node_ids.begin() + mid);
+            a.end_pos_m = segmentLengthAlongNodes(nodes, a);
+
+            Segment b; b.id = int(newSegs.size()) + 1;
+            b.node_ids.insert(b.node_ids.end(), s.node_ids.begin() + mid, s.node_ids.end());
+            b.end_pos_m = segmentLengthAlongNodes(nodes, b);
+
+            if (a.node_ids.empty() || b.node_ids.empty()) newSegs.push_back(s);
+            else { newSegs.push_back(a); newSegs.push_back(b); }
+        }
+
+        if (changed) refineSegmentsByVin(nodes, newSegs);
+        segs = std::move(newSegs);
+    }
+
     DevicePlacement NetworkDesigner::planDevices(const std::vector<Node>& nodes, const std::vector<Segment>& segs) {
         DevicePlacement dev;
-        for (size_t s_idx = 0; s_idx < segs.size(); ++s_idx) {
-            const auto& s = segs[s_idx];
+
+        for (size_t i = 0; i < segs.size(); ++i) {
+            const Segment& s = segs[i];
             if (s.node_ids.empty()) continue;
 
-            Node start_node = nodes[s.node_ids.front()];
-            Node end_node = nodes[s.node_ids.back()];
+            const Node& start = nodes[s.node_ids.front()];
+            const Node& end = nodes[s.node_ids.back()];
 
-            dev.terminator_positions.push_back({ start_node.x, start_node.y });
-            dev.terminator_positions.push_back({ end_node.x, end_node.y });
+            // always place terminators at start/end
+            dev.terminator_positions.push_back({ start.x, start.y });
+            dev.terminator_positions.push_back({ end.x, end.y });
 
-            // 中继器：段内中点，或者单节点段也放置
-            int mid_index = s.node_ids.size() / 2;
-            Node mid_node = nodes[s.node_ids[mid_index]];
-            dev.repeater_positions.push_back({ mid_node.x, mid_node.y });
-
-            // 网桥：段间连接
-            if (s_idx > 0) {
-                const auto& prev_seg = segs[s_idx - 1];
-                Node prev_end = nodes[prev_seg.node_ids.back()];
-                Node curr_start = start_node;
-
-                double bx = (prev_end.x + curr_start.x) / 2.0;
-                double by = (prev_end.y + curr_start.y) / 2.0;
-                dev.bridge_positions.push_back({ bx, by });
+            // **correct repeater logic**
+            double segLen = segmentLengthAlongNodes(nodes, s);
+            if (segLen > p_.max_segment_length_m || s.node_ids.size() > size_t(p_.max_nodes_per_segment)) {
+                if (s.node_ids.size() >= 2) {
+                    size_t midIndex = s.node_ids.size() / 2;
+                    const Node& a = nodes[s.node_ids[midIndex - 1]];
+                    const Node& b = nodes[s.node_ids[midIndex]];
+                    double rx = (a.x + b.x) / 2.0;
+                    double ry = (a.y + b.y) / 2.0;
+                    dev.repeater_positions.push_back({ rx, ry });
+                }
             }
         }
+
+        // bridges between segments
+        for (size_t i = 0; i + 1 < segs.size(); ++i) {
+            const Segment& cur = segs[i];
+            const Segment& nxt = segs[i + 1];
+            const Node& end_cur = nodes[cur.node_ids.back()];
+            const Node& start_next = nodes[nxt.node_ids.front()];
+            double bx = (end_cur.x + start_next.x) / 2.0;
+            double by = (end_cur.y + start_next.y) / 2.0;
+            dev.bridge_positions.push_back({ bx, by });
+        }
+
         return dev;
     }
 
     std::vector<std::pair<int, bool>> NetworkDesigner::checkReceiveLevels(const std::vector<Node>& nodes, const std::vector<Segment>& segs) {
         std::vector<std::pair<int, bool>> out;
-        for (auto& n : nodes) out.push_back({ n.id, true });
-        return out;
-    }
+        out.reserve(nodes.size());
+        for (auto& n : nodes) out.push_back({ n.id,true });
 
-    double NetworkDesigner::estimateReceivedVoltage(double tx, double distance_m, double Rload) const {
-        double att = std::pow(10.0, -p_.cable_atten_dB_per_100m * distance_m / 100 / 20);
-        return tx * att * (Rload / (Rload + p_.driver_source_impedance_ohm));
+        for (auto& s : segs) {
+            double segLen = segmentLengthAlongNodes(nodes, s);
+            int n = int(s.node_ids.size());
+            bool ok = estimateReceivedVoltage(p_.driver_peak_voltage_v, segLen, n) >= p_.required_min_receive_v;
+            for (int nid : s.node_ids) out[nid].second = ok;
+        }
+
+        return out;
     }
 
     DesignResult NetworkDesigner::designNetwork(const std::vector<Node>& nodes) {
         DesignResult res;
+
         res.segments = partitionIntoSegments(nodes);
+        refineSegmentsByVin(nodes, res.segments);
         res.devices = planDevices(nodes, res.segments);
         res.node_receive_ok = checkReceiveLevels(nodes, res.segments);
+
         res.overall_ok = true;
         for (auto& p : res.node_receive_ok) if (!p.second) res.overall_ok = false;
-        res.logs.push_back("网络设计完成");
+
+        std::ostringstream ss;
+        ss << "网络设计完成. 段数=" << res.segments.size();
+        res.logs.push_back(ss.str());
+
         return res;
     }
 
+    // SVG generation and report printing remain unchanged
+#include <fstream>
     bool NetworkDesigner::generateSVG(const std::vector<Node>& nodes, const DesignResult& result, const std::string& filename) {
         if (nodes.empty()) return false;
         std::ofstream ofs(filename);
         if (!ofs.is_open()) return false;
 
         double maxX = 0, maxY = 0;
-        for (auto& n : nodes) {
-            if (n.x > maxX) maxX = n.x;
-            if (n.y > maxY) maxY = n.y;
-        }
+        for (auto& n : nodes) { if (n.x > maxX)maxX = n.x;if (n.y > maxY)maxY = n.y; }
         double margin = 50;
-        double width = maxX + margin;
-        double height = maxY + margin;
+        ofs << "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" << maxX + margin << "\" height=\"" << maxY + margin << "\">\n";
 
-        ofs << "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" << width << "\" height=\"" << height << "\">\n";
-
-        std::vector<std::string> colors = { "red","blue","green","orange","purple","cyan" };
-
-        for (size_t i = 0; i < result.segments.size(); ++i) {
-            auto& seg = result.segments[i];
-            std::string color = colors[i % colors.size()];
-            for (size_t j = 1; j < seg.node_ids.size(); ++j) {
-                int id1 = seg.node_ids[j - 1];
-                int id2 = seg.node_ids[j];
-                double x1 = nodes[id1].x, y1 = nodes[id1].y;
-                double x2 = nodes[id2].x, y2 = nodes[id2].y;
-                ofs << "<line x1=\"" << x1 << "\" y1=\"" << y1
-                    << "\" x2=\"" << x2 << "\" y2=\"" << y2
+        std::vector<std::string> colors = { "red","blue","green","orange","purple","cyan","brown","magenta" };
+        for (size_t si = 0;si < result.segments.size();++si) {
+            const Segment& s = result.segments[si];
+            std::string color = colors[si % colors.size()];
+            for (size_t j = 1;j < s.node_ids.size();++j) {
+                int id1 = s.node_ids[j - 1], id2 = s.node_ids[j];
+                ofs << "<line x1=\"" << nodes[id1].x << "\" y1=\"" << nodes[id1].y
+                    << "\" x2=\"" << nodes[id2].x << "\" y2=\"" << nodes[id2].y
                     << "\" stroke=\"" << color << "\" stroke-width=\"2\" />\n";
             }
         }
 
         for (auto& n : nodes) {
-            ofs << "<circle cx=\"" << n.x << "\" cy=\"" << n.y
-                << "\" r=\"5\" fill=\"black\" />\n";
-            ofs << "<text x=\"" << n.x + 6 << "\" y=\"" << n.y - 6
-                << "\" font-size=\"12\" fill=\"black\">" << n.id << "</text>\n";
+            ofs << "<circle cx=\"" << n.x << "\" cy=\"" << n.y << "\" r=\"5\" fill=\"black\" />\n";
+            ofs << "<text x=\"" << n.x + 6 << "\" y=\"" << n.y - 6 << "\" font-size=\"12\" fill=\"black\">" << n.id << "</text>\n";
+        }
+
+        for (auto& r : result.devices.repeater_positions)
+            ofs << "<rect x=\"" << r.first - 4 << "\" y=\"" << r.second - 4 << "\" width=\"8\" height=\"8\" fill=\"blue\" />\n";
+
+        for (auto& b : result.devices.bridge_positions) {
+            double x = b.first, y = b.second;
+            ofs << "<polygon points=\""
+                << x << "," << (y - 5) << " "
+                << (x + 5) << "," << y << " "
+                << x << "," << (y + 5) << " "
+                << (x - 5) << "," << y << "\" fill=\"purple\" />\n";
         }
 
         ofs << "</svg>\n";
@@ -150,15 +233,17 @@ namespace IndustrialNet {
         for (auto& seg : result.segments) {
             Node start_node = nodes[seg.node_ids.front()];
             Node end_node = nodes[seg.node_ids.back()];
-
-            std::cout << "网段 " << seg.id << ": 节点数 = " << seg.node_ids.size() << " [";
-            for (size_t i = 0; i < seg.node_ids.size(); ++i) {
+            std::cout << "网段 " << seg.id << ": 节点数=" << seg.node_ids.size() << " [";
+            for (size_t i = 0;i < seg.node_ids.size();++i) {
                 std::cout << seg.node_ids[i];
                 if (i != seg.node_ids.size() - 1) std::cout << ", ";
             }
             std::cout << "]\n";
-            std::cout << "  起点坐标 = (" << start_node.x << "," << start_node.y << "), "
-                << "终点坐标 = (" << end_node.x << "," << end_node.y << ")\n";
+            std::cout << "  起点坐标=(" << start_node.x << "," << start_node.y << "), "
+                << "终点坐标=(" << end_node.x << "," << end_node.y << ")\n";
+            double segLen = segmentLengthAlongNodes(nodes, seg);
+            double Vin = estimateReceivedVoltage(p_.driver_peak_voltage_v, segLen, (int)seg.node_ids.size());
+            std::cout << "  段长度=" << segLen << ", 估算 Vin=" << Vin << " V\n";
         }
 
         std::cout << "终端电阻位置: ";
@@ -181,8 +266,7 @@ namespace IndustrialNet {
             std::cout << "节点 " << n.first << ": " << (n.second ? "OK" : "FAIL") << "\n";
 
         std::cout << "总体网络状态: " << (result.overall_ok ? "OK" : "FAIL") << "\n";
-        for (auto& log : result.logs)
-            std::cout << log << "\n";
+        for (auto& log : result.logs) std::cout << log << "\n";
     }
 
 } // namespace IndustrialNet

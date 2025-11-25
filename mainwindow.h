@@ -10,7 +10,7 @@
 #include <QPushButton>
 #include <QTextEdit>
 #include "NetworkDesigner.h"
-
+//#include "CanIdFilterLib.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -54,6 +54,16 @@ private slots:
 
     void on_slopeCalculateButton_clicked();
 
+
+    void onMultipleNodesAdded(const QVector<NodeInfo> &nodesData);
+    //
+    // 在 MainWindow 类中添加
+private:
+    // 添加报文ID分配相关的成员函数
+    void allocateMessageIds();
+    QMap<QString, int> getMessagePriorities() const;
+    QVector<QPair<QString, QString>> generateNodeMessagePairs() const;
+
 private:
     Ui::MainWindow *ui;
 
@@ -71,7 +81,8 @@ private:
     void editBaudRate(int row);
 
     float calculateBusLoad(float baudRate);  // 计算总线负载
-    int calculateFrameBits(const BaudRate &data);  // 计算单帧比特数
+    int calculateFrameBits(const BaudRate &data);  // 计算单帧比特数、
+
 
 };
 #endif // MAINWINDOW_H

@@ -324,6 +324,7 @@ void MainWindow::onBaudComboContextMenu(const QPoint &pos) {
 
 void MainWindow::on_RunButton3_clicked()
 {
+    /*计算寄存器参数*/
     int baudindex = ui->ChooseBaudcomboBox->currentIndex();
     QString baudText = ui->ChooseBaudcomboBox->currentText().replace(" kbps","");
     int baudValue = 0;  // 先定义
@@ -364,6 +365,9 @@ void MainWindow::on_RunButton3_clicked()
     }
 
 
+    /*分配报文ID与优先级*/
+
+
     //ui->BRPtext->setPlainText(QString::number(baudValue));
 }
 
@@ -373,9 +377,31 @@ void MainWindow::on_AddNodebutton_clicked()
     // 获取所有可用的消息名称
     QVector<QString> messageNames = getAvailableMessageNames();
 
+
     addNode *nodeDialog = new addNode (messageNames);
+
+    // 修改连接信号，增加对多个节点信号的连接
+    connect(nodeDialog, &addNode::multipleNodesAdded, this, &MainWindow::onMultipleNodesAdded); // 新增这行
+
     connect(nodeDialog, &addNode::nodeDataAdded, this, &MainWindow::onNodeDataAdded);
     nodeDialog->show(); // 使用 show() 而不是 exec()，因为 addNode 继承自 QWidget
+}
+
+// 处理多个节点添加
+void MainWindow::onMultipleNodesAdded(const QVector<NodeInfo> &nodesData)
+{
+    // 将生成的多个节点添加到节点列表
+    m_nodeList.append(nodesData);
+
+    // 刷新节点表格显示
+    refreshNodeTable();
+
+    qDebug() << "批量添加" << nodesData.size() << "个节点";
+    for (const NodeInfo &node : nodesData) {
+        qDebug() << "节点:" << node.nodeName
+                 << "位置: (" << node.xCoordinate << "," << node.yCoordinate << ")"
+                 << "使用消息数:" << node.selectedMessages.size();
+    }
 }
 
 QVector<QString> MainWindow::getAvailableMessageNames() const
