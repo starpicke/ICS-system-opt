@@ -24,7 +24,7 @@
        </size>
       </property>
       <property name="currentIndex">
-       <number>1</number>
+       <number>4</number>
       </property>
       <widget class="QWidget" name="tab">
        <attribute name="title">
@@ -238,8 +238,8 @@
           <rect>
            <x>98</x>
            <y>27</y>
-           <width>256</width>
-           <height>192</height>
+           <width>631</width>
+           <height>221</height>
           </rect>
          </property>
          <property name="autoScrollMargin">
@@ -273,7 +273,15 @@
           <bool>false</bool>
          </attribute>
         </widget>
-        <widget class="QWidget" name="">
+        <widget class="QWidget" name="layoutWidget">
+         <property name="geometry">
+          <rect>
+           <x>10</x>
+           <y>40</y>
+           <width>82</width>
+           <height>102</height>
+          </rect>
+         </property>
          <layout class="QVBoxLayout" name="verticalLayout_3">
           <item>
            <widget class="QPushButton" name="AddNodebutton">
@@ -308,8 +316,8 @@
        <widget class="QGroupBox" name="groupBox_9">
         <property name="geometry">
          <rect>
-          <x>190</x>
-          <y>310</y>
+          <x>10</x>
+          <y>290</y>
           <width>311</width>
           <height>221</height>
          </rect>
@@ -328,29 +336,31 @@
          </property>
         </widget>
        </widget>
-       <widget class="QWidget" name="">
-        <layout class="QHBoxLayout" name="horizontalLayout_7">
-         <item>
-          <spacer name="horizontalSpacer_2">
-           <property name="orientation">
-            <enum>Qt::Horizontal</enum>
-           </property>
-           <property name="sizeHint" stdset="0">
-            <size>
-             <width>40</width>
-             <height>20</height>
-            </size>
-           </property>
-          </spacer>
-         </item>
-         <item>
-          <widget class="QPushButton" name="calnetworkbutton">
-           <property name="text">
-            <string>运行</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
+       <widget class="QPushButton" name="calnetworkbutton">
+        <property name="geometry">
+         <rect>
+          <x>600</x>
+          <y>420</y>
+          <width>80</width>
+          <height>24</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>运行</string>
+        </property>
+       </widget>
+       <widget class="QPushButton" name="pushButton_2">
+        <property name="geometry">
+         <rect>
+          <x>600</x>
+          <y>480</y>
+          <width>81</width>
+          <height>24</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>PushButton</string>
+        </property>
        </widget>
       </widget>
       <widget class="QWidget" name="tab_3">
@@ -734,7 +744,7 @@ li.checked::marker { content: &quot;\2612&quot;; }
           </property>
           <layout class="QHBoxLayout" name="horizontalLayout_4">
            <item>
-            <widget class="QPushButton" name="allocateIdsButton">
+            <widget class="QPushButton" name="allocateAndDesignButton">
              <property name="text">
               <string>分配CAN ID</string>
              </property>
@@ -810,15 +820,15 @@ li.checked::marker { content: &quot;\2612&quot;; }
      <x>0</x>
      <y>0</y>
      <width>882</width>
-     <height>19</height>
+     <height>21</height>
     </rect>
    </property>
    <widget class="QMenu" name="FileMenu">
     <property name="title">
      <string>文件</string>
     </property>
+    <addaction name="actionNew"/>
     <addaction name="actionSave"/>
-    <addaction name="actionLoad"/>
     <addaction name="actionOpen"/>
     <addaction name="actionExport"/>
     <addaction name="actionQuit"/>
@@ -835,6 +845,7 @@ li.checked::marker { content: &quot;\2612&quot;; }
     <property name="title">
      <string>帮助</string>
     </property>
+    <addaction name="TXTset"/>
    </widget>
    <addaction name="FileMenu"/>
    <addaction name="SetMenu"/>
@@ -846,18 +857,18 @@ li.checked::marker { content: &quot;\2612&quot;; }
     <string>你好</string>
    </property>
   </action>
-  <action name="actionSave">
+  <action name="actionNew">
    <property name="icon">
-    <iconset resource="icon.qrc">
+    <iconset>
      <normaloff>:/new/icons/resources/icon/新建.png</normaloff>:/new/icons/resources/icon/新建.png</iconset>
    </property>
    <property name="text">
     <string>新建配置</string>
    </property>
   </action>
-  <action name="actionLoad">
+  <action name="actionSave">
    <property name="icon">
-    <iconset resource="icon.qrc">
+    <iconset>
      <normaloff>:/new/icons/resources/icon/save-fill.png</normaloff>:/new/icons/resources/icon/save-fill.png</iconset>
    </property>
    <property name="text">
@@ -866,7 +877,7 @@ li.checked::marker { content: &quot;\2612&quot;; }
   </action>
   <action name="actionOpen">
    <property name="icon">
-    <iconset resource="icon.qrc">
+    <iconset>
      <normaloff>:/new/icons/resources/icon/导入.png</normaloff>:/new/icons/resources/icon/导入.png</iconset>
    </property>
    <property name="text">
@@ -883,13 +894,16 @@ li.checked::marker { content: &quot;\2612&quot;; }
     <string>退出</string>
    </property>
   </action>
+  <action name="TXTset">
+   <property name="text">
+    <string>软件使用手册</string>
+   </property>
+  </action>
  </widget>
  <tabstops>
   <tabstop>pushButton</tabstop>
   <tabstop>tableView</tabstop>
  </tabstops>
- <resources>
-  <include location="icon.qrc"/>
- </resources>
+ <resources/>
  <connections/>
 </ui>

@@ -34,6 +34,8 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         NetworkDesigner.cpp NetworkDesigner.h
 
         CanIdFilterLib.cpp CanIdFilterLib.h
+        PDFReportGenerator.h PDFReportGenerator.cpp
+        ComprehensiveReport.h ComprehensiveReport.cpp
 
 
 

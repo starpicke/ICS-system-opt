@@ -6,15 +6,15 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>212</width>
-    <height>466</height>
+    <width>250</width>
+    <height>558</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>Form</string>
   </property>
   <layout class="QGridLayout" name="gridLayout_4">
-   <item row="0" column="0">
+   <item row="0" column="0" colspan="2">
     <widget class="QGroupBox" name="groupBox_2">
      <property name="title">
       <string>节点名称</string>
@@ -26,7 +26,7 @@
      </layout>
     </widget>
    </item>
-   <item row="1" column="0">
+   <item row="1" column="0" colspan="2">
     <widget class="QGroupBox" name="groupBox">
      <property name="title">
       <string>节点位置</string>
@@ -55,7 +55,7 @@
      </layout>
     </widget>
    </item>
-   <item row="2" column="0">
+   <item row="2" column="0" colspan="2">
     <widget class="QGroupBox" name="AutosetBox">
      <property name="title">
       <string>自动配置</string>
@@ -67,10 +67,13 @@
       <bool>false</bool>
      </property>
      <layout class="QGridLayout" name="gridLayout">
-      <item row="0" column="0">
-       <widget class="QLabel" name="label">
+      <item row="3" column="2">
+       <widget class="QSpinBox" name="VerticalspinBox"/>
+      </item>
+      <item row="3" column="0">
+       <widget class="QLabel" name="label_7">
         <property name="text">
-         <string>水平间距</string>
+         <string>垂直节点数</string>
         </property>
        </widget>
       </item>
@@ -81,6 +84,22 @@
         </property>
        </widget>
       </item>
+      <item row="0" column="2">
+       <widget class="QDoubleSpinBox" name="XINRSpinBox"/>
+      </item>
+      <item row="2" column="2">
+       <widget class="QSpinBox" name="HorizonSpinBox"/>
+      </item>
+      <item row="0" column="0">
+       <widget class="QLabel" name="label">
+        <property name="text">
+         <string>水平间距</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="2">
+       <widget class="QDoubleSpinBox" name="YINRSpinBox"/>
+      </item>
       <item row="1" column="0">
        <widget class="QLabel" name="label_2">
         <property name="text">
@@ -88,29 +107,10 @@
         </property>
        </widget>
       </item>
-      <item row="1" column="2">
-       <widget class="QDoubleSpinBox" name="YINRSpinBox"/>
-      </item>
-      <item row="2" column="2">
-       <widget class="QSpinBox" name="HorizonSpinBox"/>
-      </item>
-      <item row="0" column="2">
-       <widget class="QDoubleSpinBox" name="XINRSpinBox"/>
-      </item>
-      <item row="3" column="0">
-       <widget class="QLabel" name="label_7">
-        <property name="text">
-         <string>垂直节点数</string>
-        </property>
-       </widget>
-      </item>
-      <item row="3" column="2">
-       <widget class="QSpinBox" name="VerticalspinBox"/>
-      </item>
      </layout>
     </widget>
    </item>
-   <item row="3" column="0">
+   <item row="3" column="0" colspan="2">
     <widget class="QLabel" name="label_6">
      <property name="font">
       <font>
@@ -123,9 +123,15 @@
     </widget>
    </item>
    <item row="4" column="0">
-    <widget class="QGroupBox" name="groupBox_3">
+    <widget class="QGroupBox" name="sendGroupBox">
      <property name="title">
-      <string>选择信号</string>
+      <string>选择发送信号</string>
+     </property>
+     <property name="checkable">
+      <bool>false</bool>
+     </property>
+     <property name="checked">
+      <bool>false</bool>
      </property>
      <layout class="QGridLayout" name="gridLayout_3">
       <item row="0" column="0">
@@ -134,7 +140,25 @@
      </layout>
     </widget>
    </item>
-   <item row="5" column="0">
+   <item row="4" column="1">
+    <widget class="QGroupBox" name="receiveGroupBox">
+     <property name="title">
+      <string>选择接收信号</string>
+     </property>
+     <property name="checkable">
+      <bool>false</bool>
+     </property>
+     <property name="checked">
+      <bool>false</bool>
+     </property>
+     <layout class="QGridLayout" name="gridLayout_6">
+      <item row="0" column="0">
+       <widget class="QListWidget" name="OlistWidget"/>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item row="5" column="0" colspan="2">
     <widget class="QDialogButtonBox" name="buttonBox">
      <property name="standardButtons">
       <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>

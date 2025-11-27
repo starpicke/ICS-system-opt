@@ -28,7 +28,7 @@ struct DevicePlacement {
 struct DesignResult {
     std::vector<Segment> segments;
     DevicePlacement devices;
-    std::vector<std::pair<int, bool>> node_receive_ok; // per node id, pass/fail
+    std::vector<std::pair<int, bool>> node_receive_ok;
     std::vector<std::string> logs;
     bool overall_ok = false;
 };
@@ -43,6 +43,11 @@ struct DesignerParams {
     double termination_impedance_ohm = 120.0;
     double RL_ohm = 40000.0;
     double Rw_factor = 0.0214;
+
+    // Terminator布局控制
+    double terminator_offset_along = 2.0;
+    double terminator_offset_perp = 2.0;
+    double terminator_min_distance = 1.0;
 };
 
 class NetworkDesigner {
@@ -56,15 +61,23 @@ public:
 private:
     DesignerParams p_;
 
+    // ——【智能分段核心】——
     std::vector<Segment> partitionIntoSegments(const std::vector<Node>& nodes);
-    void refineSegmentsByVin(const std::vector<Node>& nodes, std::vector<Segment>& segs);
 
+    void refineSegmentsByVin(const std::vector<Node>& nodes, std::vector<Segment>& segs);
     DevicePlacement planDevices(const std::vector<Node>& nodes, const std::vector<Segment>& segs);
     std::vector<std::pair<int, bool>> checkReceiveLevels(const std::vector<Node>& nodes, const std::vector<Segment>& segs);
 
     double estimateReceivedVoltage(double Vout, double segment_length_m, int n_nodes_on_segment) const;
     double segmentLengthAlongNodes(const std::vector<Node>& nodes, const Segment& seg) const;
     double distance2D(double x1, double y1, double x2, double y2) const;
+
+
+    std::pair<double,double> adjustTerminatorPosition(
+        double x, double y,
+        const std::vector<std::pair<double,double>>& existing_devices,
+        const std::vector<Node>& nodes) const;
 };
+
 
 } // namespace IndustrialNet

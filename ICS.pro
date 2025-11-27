@@ -1,4 +1,5 @@
 QT       += core gui
+QT+= printsupport
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -16,6 +17,9 @@ DEFINES += QT_DEPRECATED_WARNINGS
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
+    ComprehensiveReport.cpp \
+    NetworkView.cpp \
+    PDFReportGenerator.cpp \
     addbaud.cpp \
     addnode.cpp \
     CANBitTiming.cpp \
@@ -26,6 +30,9 @@ SOURCES += \
     OptionalCanFeatures.cpp
 
 HEADERS += \
+    ComprehensiveReport.h \
+    NetworkView.h \
+    PDFReportGenerator.h \
     addbaud.h \
     addnode.h \
     CANBitTiming.h \

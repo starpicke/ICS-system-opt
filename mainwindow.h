@@ -11,8 +11,10 @@
 #include <QTextEdit>
 #include "NetworkDesigner.h"
 #include "CanIdFilterLib.h"
+#include "NetworkView.h"
+#include <QVBoxLayout>
 
-QT_BEGIN_NAMESPACE
+    QT_BEGIN_NAMESPACE
 namespace Ui {
 class MainWindow;
 }
@@ -25,6 +27,10 @@ class MainWindow : public QMainWindow
 public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
+
+    // 添加公共getter方法
+    float getMaxAllowedBaudRate() const { return m_maxAllowedBaudRate; }
+    bool isBaudRateCalculated() const { return m_baudRateCalculated; }
 
 private slots:
     void on_pushButton_clicked();
@@ -57,9 +63,10 @@ private slots:
     void onMultipleNodesAdded(const QVector<NodeInfo> &nodesData);
 
     // CAN ID分配与滤波器设计相关槽函数
-    void on_allocateIdsButton_clicked();
-    void on_designFilterButton_clicked();
+    void on_allocateAndDesignButton_clicked();
     void on_generateReportButton_clicked();
+
+    void on_pushButton_2_clicked();
 
     // 设置栏
     void onActionOpen();
@@ -72,11 +79,19 @@ private:
     void allocateMessageIds();
     void designMessageFilter();
     void updateIdAllocationTable();
-    void updateFilterDesignTable(const canopt2::FilterDesignResult& result);
+    void updateFilterDesignTable(const std::vector<std::pair<std::string, canopt2::FilterDesignResult>>& filterResults);
 
     // 数据转换函数
     std::vector<canopt2::CanNodeInfo> convertToCanNodes() const;
     std::vector<canopt2::CanSignalInfo> convertToCanSignals() const;
+    std::vector<std::pair<std::string, canopt2::FilterDesignResult>> designFiltersForAllNodes() const;
+    std::string generateCompleteReport(const std::vector<std::pair<std::string, canopt2::FilterDesignResult>>& filterResults) const;
+
+    float m_maxAllowedBaudRate;  // 添加这个成员变量
+    bool m_baudRateCalculated;   // 标记是否已计算过波特率
+
+    NetworkView* networkView_;     // 用于显示网络
+    QVBoxLayout* networkLayout_;   // 放置 NetworkView 的布局
 
 private:
     Ui::MainWindow *ui;
@@ -90,11 +105,11 @@ private:
     QVector<NodeInfo> m_nodeList;
     QStandardItemModel *m_nodeModel;
 
-     // 网桥中继器表格模型
+    // 网桥中继器表格模型
     QStandardItemModel *m_bridgeModel;
     void updateBridgeTable(const IndustrialNet::DesignResult& result);
-   // QString generateNetworkReport(const IndustrialNet::DesignResult& result,
-                                  //const std::vector<IndustrialNet::Node>& nodes);
+    // QString generateNetworkReport(const IndustrialNet::DesignResult& result,
+    //const std::vector<IndustrialNet::Node>& nodes);
 
     // CAN ID分配结果
     std::vector<canopt2::IdAllocationResult> m_idAllocationResults;

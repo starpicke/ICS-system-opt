@@ -9,8 +9,13 @@ addNode::addNode(const QVector<QString> &availableMessages, QWidget *parent)
 {
     ui->setupUi(this);
     setupUI();
-    populateMessageList(availableMessages);
-    connect(ui->AutosetBox, &QGroupBox::toggled, this, &addNode::on_autosetBox_toggled);
+    populateMessageLists(availableMessages);
+
+    // 连接信号槽
+    connect(ui->OlistWidget, &QListWidget::itemChanged,
+            this, &addNode::onSendListItemChanged);
+    connect(ui->listWidget, &QListWidget::itemChanged,
+            this, &addNode::onReceiveListItemChanged);
 }
 
 addNode::~addNode()
@@ -26,21 +31,33 @@ void addNode::setupUI()
     ui->XSpinBox->setDecimals(2);
     ui->YSpinBox->setDecimals(2);
 
-    connect(ui->listWidget, &QListWidget::itemChanged, this, &addNode::onListItemChanged);
+    // 连接发送列表信号
+    connect(ui->OlistWidget, &QListWidget::itemChanged, this, &addNode::onSendListItemChanged);
+
+    // 连接接收列表信号
+    connect(ui->listWidget, &QListWidget::itemChanged, this, &addNode::onReceiveListItemChanged);
 
     // 设置窗口属性
     setWindowTitle("配置节点");
 }
 
-void addNode::populateMessageList(const QVector<QString> &availableMessages)
+void addNode::populateMessageLists(const QVector<QString> &availableMessages)
 {
+    ui->OlistWidget->clear();
     ui->listWidget->clear();
 
     for (const QString &messageName : availableMessages) {
-        QListWidgetItem *item = new QListWidgetItem(messageName);
-        item->setCheckState(Qt::Unchecked);
-        item->setData(Qt::UserRole, messageName); // 存储原始消息名称
-        ui->listWidget->addItem(item);
+        // 发送列表
+        QListWidgetItem *sendItem = new QListWidgetItem(messageName);
+        sendItem->setCheckState(Qt::Unchecked);
+        sendItem->setData(Qt::UserRole, messageName);
+        ui->OlistWidget->addItem(sendItem);
+
+        // 接收列表
+        QListWidgetItem *receiveItem = new QListWidgetItem(messageName);
+        receiveItem->setCheckState(Qt::Unchecked);
+        receiveItem->setData(Qt::UserRole, messageName);
+        ui->listWidget->addItem(receiveItem);
     }
 }
 
@@ -53,12 +70,24 @@ void addNode::setNodeData(const NodeInfo &nodeData)
     ui->XSpinBox->setValue(nodeData.xCoordinate);
     ui->YSpinBox->setValue(nodeData.yCoordinate);
 
-    // 设置选中的消息
+    // 设置发送消息列表
+    for (int i = 0; i < ui->OlistWidget->count(); ++i) {
+        QListWidgetItem *item = ui->OlistWidget->item(i);
+        QString messageName = item->data(Qt::UserRole).toString();
+
+        if (nodeData.selectedSendMessages.contains(messageName)) {
+            item->setCheckState(Qt::Checked);
+        } else {
+            item->setCheckState(Qt::Unchecked);
+        }
+    }
+
+    // 设置接收消息列表
     for (int i = 0; i < ui->listWidget->count(); ++i) {
         QListWidgetItem *item = ui->listWidget->item(i);
         QString messageName = item->data(Qt::UserRole).toString();
 
-        if (nodeData.selectedMessages.contains(messageName)) {
+        if (nodeData.selectedReceiveMessages.contains(messageName)) {
             item->setCheckState(Qt::Checked);
         } else {
             item->setCheckState(Qt::Unchecked);
@@ -73,28 +102,23 @@ NodeInfo addNode::getNodeData() const
     nodeData.xCoordinate = ui->XSpinBox->value();
     nodeData.yCoordinate = ui->YSpinBox->value();
 
-    // 收集选中的消息
+    // 收集选中的发送消息
+    for (int i = 0; i < ui->OlistWidget->count(); ++i) {
+        QListWidgetItem *item = ui->OlistWidget->item(i);
+        if (item->checkState() == Qt::Checked) {
+            nodeData.selectedSendMessages.append(item->data(Qt::UserRole).toString());
+        }
+    }
+
+    // 收集选中的接收消息
     for (int i = 0; i < ui->listWidget->count(); ++i) {
         QListWidgetItem *item = ui->listWidget->item(i);
         if (item->checkState() == Qt::Checked) {
-            nodeData.selectedMessages.append(item->data(Qt::UserRole).toString());
+            nodeData.selectedReceiveMessages.append(item->data(Qt::UserRole).toString());
         }
     }
 
     return nodeData;
-}
-
-void addNode::onListItemChanged(QListWidgetItem *item)
-{
-    // 这里可以添加一些实时处理逻辑
-    // 比如根据选择状态改变项的颜色等
-    if (item->checkState() == Qt::Checked) {
-        // 选中状态
-        item->setForeground(Qt::black);
-    } else {
-        // 未选中状态，可以设置为灰色
-        item->setForeground(Qt::gray);
-    }
 }
 
 void addNode::on_buttonBox_accepted()
@@ -106,8 +130,9 @@ void addNode::on_buttonBox_accepted()
         return;
     }
 
-    if (baseNodeData.selectedMessages.isEmpty()) {
-        QMessageBox::warning(this, "输入错误", "请至少选择一个消息！");
+    // 验证消息选择
+    if (baseNodeData.selectedSendMessages.isEmpty() && baseNodeData.selectedReceiveMessages.isEmpty()) {
+        QMessageBox::warning(this, "输入错误", "请至少选择一个发送或接收消息！");
         return;
     }
 
@@ -163,7 +188,6 @@ void addNode::on_buttonBox_rejected()
     close(); // 关闭窗口
 }
 
-
 QVector<NodeInfo> addNode::generateMatrixNodes()
 {
     QVector<NodeInfo> nodes;
@@ -194,8 +218,9 @@ QVector<NodeInfo> addNode::generateMatrixNodes()
             newNode.xCoordinate = startX + col * xSpacing;
             newNode.yCoordinate = startY + row * ySpacing;
 
-            // 复制选中的消息列表（所有节点使用相同的消息配置）
-            newNode.selectedMessages = baseNode.selectedMessages;
+            // 复制发送和接收消息列表（所有节点使用相同的消息配置）
+            newNode.selectedSendMessages = baseNode.selectedSendMessages;
+            newNode.selectedReceiveMessages = baseNode.selectedReceiveMessages;
 
             nodes.append(newNode);
             nodeCounter++;
@@ -205,22 +230,42 @@ QVector<NodeInfo> addNode::generateMatrixNodes()
     return nodes;
 }
 
-
-void addNode::on_autosetBox_toggled(bool checked)
+void addNode::onSendListItemChanged(QListWidgetItem *item)
 {
-    // 当自动生成模式启用时，提供视觉提示
-    if (checked) {
-        // 自动生成模式启用
-        ui->NodeName->setPlaceholderText("请输入基础名称（会自动添加序号）");
-
-        // 可选：改变标签文字以提示用户
-        // ui->label_nodeName->setText("基础名称：");
-
+    QString messageName = item->data(Qt::UserRole).toString();
+    if (item->checkState() == Qt::Checked) {
+        if (!m_currentNodeData.selectedSendMessages.contains(messageName)) {
+            m_currentNodeData.selectedSendMessages.append(messageName);
+        }
     } else {
-        // 单个节点模式
-        ui->NodeName->setPlaceholderText("");
-        // ui->label_nodeName->setText("节点名称：");
+        m_currentNodeData.selectedSendMessages.removeAll(messageName);
+    }
+
+    if (item->checkState() == Qt::Checked) {
+        // 选中状态
+        item->setForeground(Qt::black);
+    } else {
+        // 未选中状态，可以设置为灰色
+        item->setForeground(Qt::gray);
     }
 }
 
+void addNode::onReceiveListItemChanged(QListWidgetItem *item)
+{
+    QString messageName = item->data(Qt::UserRole).toString();
+    if (item->checkState() == Qt::Checked) {
+        if (!m_currentNodeData.selectedReceiveMessages.contains(messageName)) {
+            m_currentNodeData.selectedReceiveMessages.append(messageName);
+        }
+    } else {
+        m_currentNodeData.selectedReceiveMessages.removeAll(messageName);
+    }
 
+    if (item->checkState() == Qt::Checked) {
+        // 选中状态
+        item->setForeground(Qt::black);
+    } else {
+        // 未选中状态，可以设置为灰色
+        item->setForeground(Qt::gray);
+    }
+}

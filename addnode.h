@@ -9,7 +9,8 @@ struct NodeInfo {
     QString nodeName;           // 节点名称
     double xCoordinate;         // X坐标
     double yCoordinate;         // Y坐标
-    QVector<QString> selectedMessages;  // 选中的消息名称列表
+    QVector<QString> selectedSendMessages;    // 选中的发送消息列表
+    QVector<QString> selectedReceiveMessages; // 选中的接收消息列表
 
     NodeInfo() : nodeName(""), xCoordinate(0.0), yCoordinate(0.0) {}
 };
@@ -34,27 +35,22 @@ public:
 
 signals:
     void nodeDataAdded(const NodeInfo &nodeData);
-
     void multipleNodesAdded(const QVector<NodeInfo> &nodesData);
 
 private slots:
-    void onListItemChanged(QListWidgetItem *item);
-
+    void onSendListItemChanged(QListWidgetItem *item);
+    void onReceiveListItemChanged(QListWidgetItem *item);
     void on_buttonBox_accepted();
-
     void on_buttonBox_rejected();
-
-    void on_autosetBox_toggled(bool checked);
 
 private:
     void setupUI();
-    void populateMessageList(const QVector<QString> &availableMessages);
+    void populateMessageLists(const QVector<QString> &availableMessages);
 
 private:
     Ui::addNode *ui;
     QVector<QString> m_availableMessages;
     NodeInfo m_currentNodeData;
-
     QVector<NodeInfo> generateMatrixNodes();
 };
 

@@ -30,63 +30,69 @@ struct RangeCheckResult {
     uint32_t maxIdValue;
 };
 
-RangeCheckResult CheckContinuousRange(const std::vector<uint32_t>& ids) {
-    RangeCheckResult result;
-    result.isContinuous = false;
-    result.minIdValue = 0;
-    result.maxIdValue = 0;
 
-    if (ids.empty()) return result;
-
-    std::vector<uint32_t> sortedIds = ids;
-    std::sort(sortedIds.begin(), sortedIds.end());
-
-    result.minIdValue = sortedIds.front();
-    result.maxIdValue = sortedIds.back();
-
-    // 检查是否连续
-    for (size_t i = 1; i < sortedIds.size(); ++i) {
-        if (sortedIds[i] != sortedIds[i - 1] + 1) {
-            return result;
-        }
-    }
-
-    result.isContinuous = true;
-    return result;
-}
-
-// 计算掩码模式
-std::pair<uint32_t, uint32_t> CalculateMaskPattern(const std::vector<uint32_t>& ids, bool useExtendedId) {
+// 新增辅助函数：计算最优掩码
+std::pair<uint32_t, uint32_t> CalculateOptimalMask(const std::vector<uint32_t>& ids, bool useExtendedId) {
     if (ids.empty()) {
         return std::make_pair(0u, 0u);
     }
 
+    const uint32_t maxIdValue = GetMaxCanId(useExtendedId);
+
+    // 如果只有一个ID，返回全掩码
+    if (ids.size() == 1) {
+        return std::make_pair(maxIdValue, ids[0]);
+    }
+
+    // 找出所有ID的共同位
     uint32_t commonBits = ~0u;
-    uint32_t varyingBits = 0;
-
-    for (size_t i = 0; i < ids.size(); ++i) {
-        uint32_t id = ids[i];
+    for (uint32_t id : ids) {
         commonBits &= id;
-        varyingBits |= (ids[0] ^ id);
     }
 
-    // 计算掩码：变化位为0，共同位为1
-    uint32_t mask = 0;
-    uint32_t temp = varyingBits;
-    while (temp) {
-        mask = (mask << 1) | 1;
-        temp >>= 1;
+    // 找出变化位
+    uint32_t varyingBits = 0;
+    for (uint32_t id : ids) {
+        varyingBits |= (id ^ commonBits);
     }
-    mask = ~mask;
 
-    // 应用ID范围限制
-    const uint32_t maxMaskValue = GetMaxCanId(useExtendedId);
-    mask &= maxMaskValue;
+    // 计算掩码：变化位设为0（不关心），其他位设为1（必须匹配）
+    uint32_t mask = ~varyingBits;
 
-    return std::make_pair(mask, commonBits & mask);
+    // 确保掩码不超过最大ID值
+    mask &= maxIdValue;
+
+    // 计算滤波器ID（基础ID）
+    uint32_t filterId = commonBits & mask;
+
+    return std::make_pair(mask, filterId);
 }
-}
 
+// 新增辅助函数：验证掩码有效性
+bool IsMaskEffective(const std::vector<uint32_t>& targetIds, uint32_t filterId, uint32_t mask) {
+    // 验证1：所有目标ID都能通过掩码
+    for (uint32_t id : targetIds) {
+        if ((id & mask) != filterId) {
+            return false;  // 有目标ID被过滤掉了
+        }
+    }
+
+    // 验证2：计算误判率（被错误接收的ID数量）
+    // 简单验证：如果掩码太宽（比如少于4位被屏蔽），可能误判率太高
+    uint32_t maskedBits = ~mask;
+    int maskedBitCount = 0;
+    while (maskedBits) {
+        maskedBitCount += (maskedBits & 1);
+        maskedBits >>= 1;
+    }
+
+    // 如果掩码屏蔽的位数太少（小于4位），可能误判率太高，不推荐使用
+    if (maskedBitCount < 4) {
+        return false;
+    }
+
+    return true;
+}}
 std::vector<IdAllocationResult> AllocateCanIds(
     const std::vector<CanNodeInfo>& nodes,
     const std::vector<CanSignalInfo>& signals,  // 修正1：参数名改为signals
@@ -197,7 +203,6 @@ std::vector<IdAllocationResult> AllocateCanIds(
     return results;
 }
 
-// 以下函数完全保持不变
 FilterDesignResult DesignCanFilter(
     const std::vector<uint32_t>& ids,
     bool useExtendedId)
@@ -206,17 +211,21 @@ FilterDesignResult DesignCanFilter(
 
     try {
         if (ids.empty()) {
-            result.note = "ID列表为空";
+            result.mode = "none";
+            result.filterCount = 0;
+            result.filterId = 0;
+            result.maskOrMaxId = 0;
+            result.note = "没有需要接收的ID";
             return result;
         }
 
         const uint32_t maximumIdValue = GetMaxCanId(useExtendedId);
 
         // 验证所有ID都在有效范围内
-        for (size_t i = 0; i < ids.size(); ++i) {
-            uint32_t id = ids[i];
+        for (uint32_t id : ids) {
             if (id > maximumIdValue) {
-                result.note = "ID超出有效范围";
+                result.mode = "error";
+                result.note = "ID超出有效范围: 0x" + std::to_string(id);
                 return result;
             }
         }
@@ -224,43 +233,46 @@ FilterDesignResult DesignCanFilter(
         // 去重并排序
         std::vector<uint32_t> uniqueIds = ids;
         std::sort(uniqueIds.begin(), uniqueIds.end());
-        std::vector<uint32_t>::iterator last = std::unique(uniqueIds.begin(), uniqueIds.end());
+        auto last = std::unique(uniqueIds.begin(), uniqueIds.end());
         uniqueIds.erase(last, uniqueIds.end());
 
-        // 尝试范围模式 - 使用结构体返回值
-        RangeCheckResult rangeResult = CheckContinuousRange(uniqueIds);
-        if (rangeResult.isContinuous) {
-            result.mode = "range";
+        // 情况1：单个ID - 使用掩码模式（全掩码精确匹配）
+        if (uniqueIds.size() == 1) {
+            result.mode = "mask";
             result.filterCount = 1;
-            result.filterId = rangeResult.minIdValue;
-            result.maskOrMaxId = rangeResult.maxIdValue;
-            result.note = "推荐范围滤波";
+            result.filterId = uniqueIds[0];
+            result.maskOrMaxId = maximumIdValue;  // 全掩码，精确匹配
+            result.note = "单个ID掩码模式（精确匹配）";
             return result;
         }
 
-        // 尝试掩码模式
-        std::pair<uint32_t, uint32_t> maskResult = CalculateMaskPattern(uniqueIds, useExtendedId);
+        // 情况2：尝试掩码模式（优先）
+        std::pair<uint32_t, uint32_t> maskResult = CalculateOptimalMask(uniqueIds, useExtendedId);
         uint32_t mask = maskResult.first;
         uint32_t filterId = maskResult.second;
 
-        if (mask != 0 && mask != GetMaxCanId(useExtendedId)) {
-            result.mode = "mask";
-            result.filterCount = 1;
-            result.filterId = filterId;
-            result.maskOrMaxId = mask;
-            result.note = "推荐掩码滤波";
-            return result;
+        if (mask != 0 && mask != maximumIdValue) {
+            // 验证掩码模式是否有效且高效（能覆盖所有目标ID且误判率低）
+            if (IsMaskEffective(uniqueIds, filterId, mask)) {
+                result.mode = "mask";
+                result.filterCount = 1;
+                result.filterId = filterId;
+                result.maskOrMaxId = mask;
+                result.note = "掩码模式，覆盖" + std::to_string(uniqueIds.size()) + "个ID";
+                return result;
+            }
         }
 
-        // 回退到列表模式
+        // 情况3：回退到列表模式
         result.mode = "list";
         result.filterCount = static_cast<uint32_t>(uniqueIds.size());
-        result.filterId = uniqueIds.front();
+        result.filterId = uniqueIds[0];
         result.maskOrMaxId = uniqueIds.back();
-        result.note = "使用列表模式";
+        result.note = "列表模式，使用" + std::to_string(uniqueIds.size()) + "个滤波器";
 
     }
     catch (const std::exception& e) {
+        result.mode = "error";
         result.note = "设计失败: " + std::string(e.what());
     }
 

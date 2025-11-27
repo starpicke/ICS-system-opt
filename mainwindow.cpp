@@ -8,6 +8,11 @@
 #include <QTextStream>
 #include "CANBitTiming.h"
 #include "OptionalCanFeatures.hpp"
+#include "PDFReportGenerator.h"
+#include "ComprehensiveReport.h"
+#include "NetworkView.h"
+#include "QVBoxLayout"
+
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -234,6 +239,10 @@ void MainWindow::calculateOptimalBaudRate()
         ui->RBaudlineEdit->clear();
         ui->PBaudlineEdit->clear();
         ui->BurdenlineEdit->clear();
+
+        // 设置成员变量
+        m_maxAllowedBaudRate = 1000.0f; // CAN最大支持1000kbps
+        m_baudRateCalculated = true;
         return;
     }
 
@@ -285,6 +294,10 @@ void MainWindow::calculateOptimalBaudRate()
     int maxAllowedLength = baudRateToLength.value(recommendedBaudRate, 0);
     bool needsSegmentation = maxSignalLength > maxAllowedLength;
 
+    // 保存最大允许波特率到成员变量
+    m_maxAllowedBaudRate = recommendedBaudRate;
+    m_baudRateCalculated = true;
+
     QString segmentationInfo = "";
     if (needsSegmentation) {
         segmentationInfo = QString("\n\n⚠️ 网段划分警告：信号最大长度 %1m 超过推荐波特率 %2 kbps 的最大长度 %3m，需要划分网段！请在结构优化配置区域配置节点，软件自动划分网段！")
@@ -330,8 +343,8 @@ void MainWindow::calculateOptimalBaudRate()
     qDebug() << "推荐波特率:" << recommendedBaudRate << "kbps";
     qDebug() << "实际负载率:" << optimalLoadRate << "%";
     qDebug() << "网段划分需要:" << (needsSegmentation ? "是" : "否");
+    qDebug() << "最大允许波特率已保存:" << m_maxAllowedBaudRate << "kbps";
 }
-
 int MainWindow::calculateFrameBits(const BaudRate &data)
 {
     int baseBits = 0;
@@ -449,7 +462,8 @@ void MainWindow::onMultipleNodesAdded(const QVector<NodeInfo> &nodesData)
     for (const NodeInfo &node : nodesData) {
         qDebug() << "节点:" << node.nodeName
                  << "位置: (" << node.xCoordinate << "," << node.yCoordinate << ")"
-                 << "使用消息数:" << node.selectedMessages.size();
+                 << "发送消息数:" << node.selectedSendMessages.size()
+                 << "接收消息数:" << node.selectedReceiveMessages.size();
     }
 }
 
@@ -469,10 +483,14 @@ void MainWindow::onNodeDataAdded(const NodeInfo &nodeData)
 
     qDebug() << "添加节点:" << nodeData.nodeName
              << "位置: (" << nodeData.xCoordinate << "," << nodeData.yCoordinate << ")"
-             << "选中消息数:" << nodeData.selectedMessages.size();
+             << "发送消息数:" << nodeData.selectedSendMessages.size()
+             << "接收消息数:" << nodeData.selectedReceiveMessages.size();
 
-    for (const QString &messageName : nodeData.selectedMessages) {
-        qDebug() << "  - " << messageName;
+    for (const QString &messageName : nodeData.selectedSendMessages) {
+        qDebug() << "  发送: " << messageName;
+    }
+    for (const QString &messageName : nodeData.selectedReceiveMessages) {
+        qDebug() << "  接收: " << messageName;
     }
 }
 
@@ -486,10 +504,20 @@ void MainWindow::refreshNodeTable()
         rowItems << new QStandardItem(node.nodeName);
         rowItems << new QStandardItem(QString::number(node.xCoordinate, 'f', 2));
         rowItems << new QStandardItem(QString::number(node.yCoordinate, 'f', 2));
-        rowItems << new QStandardItem(QString::number(node.selectedMessages.size()));
 
-        QStringList messagesList = QStringList::fromVector(node.selectedMessages);
-        QString messagesStr = messagesList.join(", ");
+        // 修改使用消息数量计算
+        int totalMessages = node.selectedSendMessages.size() + node.selectedReceiveMessages.size();
+        rowItems << new QStandardItem(QString::number(totalMessages));
+
+        // 修改消息列表显示
+        QStringList allMessages;
+        if (!node.selectedSendMessages.isEmpty()) {
+            allMessages.append("发送: " + QStringList::fromVector(node.selectedSendMessages).join(", "));
+        }
+        if (!node.selectedReceiveMessages.isEmpty()) {
+            allMessages.append("接收: " + QStringList::fromVector(node.selectedReceiveMessages).join(", "));
+        }
+        QString messagesStr = allMessages.join("; ");
         rowItems << new QStandardItem(messagesStr);
 
         m_nodeModel->appendRow(rowItems);
@@ -522,12 +550,12 @@ void MainWindow::editNode(int row)
 
         qDebug() << "更新节点:" << updatedData.nodeName
                  << "位置: (" << updatedData.xCoordinate << "," << updatedData.yCoordinate << ")"
-                 << "使用消息数:" << updatedData.selectedMessages.size();
+                 << "发送消息数:" << updatedData.selectedSendMessages.size()
+                 << "接收消息数:" << updatedData.selectedReceiveMessages.size();
     });
 
-    editDialog->show();
+    editDialog->show();  // 添加这行，显示对话框
 }
-
 void MainWindow::on_slopeCalculateButton_clicked()
 {
     if (!ui->slopeBaudRateSpinBox || !ui->slopeRiseTimeSpinBox ||
@@ -587,33 +615,29 @@ void MainWindow::on_slopeCalculateButton_clicked()
     }
 }
 
+// 点击按钮生成网络设计
 void MainWindow::on_calnetworkbutton_clicked()
 {
     if (m_nodeList.isEmpty()) {
         qDebug() << "节点列表为空！";
-        QMessageBox::warning(this, "错误", "请先添加节点数据！");
         return;
     }
 
+    // 1. 转换 QVector<NodeInfo> -> std::vector<IndustrialNet::Node>
     std::vector<IndustrialNet::Node> nodes;
     for (int i = 0; i < m_nodeList.size(); ++i) {
         IndustrialNet::Node n;
-        n.id = i;
+        n.id = i;  // 使用索引作为节点ID
         n.x = m_nodeList[i].xCoordinate;
         n.y = m_nodeList[i].yCoordinate;
         nodes.push_back(n);
     }
 
+    // 2. 调用 NetworkDesigner
     IndustrialNet::NetworkDesigner designer;
     IndustrialNet::DesignResult result = designer.designNetwork(nodes);
 
-    // 更新网桥中继器表格
-    updateBridgeTable(result);
-
-    // 生成网络设计报告
-    //QString report = generateNetworkReport(result, nodes);
-    //ui->reportTextEdit->setPlainText(report);
-
+    // 3. 用 qDebug 输出报告
     qDebug() << "=== 网络设计报告 ===";
     for (auto &seg : result.segments) {
         IndustrialNet::Node startNode = nodes[seg.node_ids.front()];
@@ -651,22 +675,59 @@ void MainWindow::on_calnetworkbutton_clicked()
 
     qDebug() << "总体网络状态:" << (result.overall_ok ? "OK" : "FAIL");
     for (auto &log : result.logs)
-        qDebug() << QString::fromStdString(log);
-
-    QMessageBox::information(this, "网络设计完成",
-                             QString("网络设计已完成！\n"
-                                     "网段数量: %1\n"
-                                     "终端电阻: %2个\n"
-                                     "中继器: %3个\n"
-                                     "网桥: %4个\n"
-                                     "网络状态: %5")
-                                 .arg(result.segments.size())
-                                 .arg(dev.terminator_positions.size())
-                                 .arg(dev.repeater_positions.size())
-                                 .arg(dev.bridge_positions.size())
-                                 .arg(result.overall_ok ? "正常" : "异常"));
+        qDebug() << log;
 }
 
+void MainWindow::on_pushButton_2_clicked()
+{
+    if (m_nodeList.isEmpty()) {
+        QMessageBox::warning(this, "错误", "节点列表为空，无法生成网络！");
+        return;
+    }
+
+    // 1. 转换 QVector<NodeInfo> -> std::vector<IndustrialNet::Node>
+    std::vector<IndustrialNet::Node> nodes;
+    for (int i = 0; i < m_nodeList.size(); ++i) {
+        IndustrialNet::Node n;
+        n.id = i;  // 使用索引作为节点ID
+        n.x = m_nodeList[i].xCoordinate;
+        n.y = m_nodeList[i].yCoordinate;
+        nodes.push_back(n);
+    }
+
+    // 2. 调用 NetworkDesigner
+    IndustrialNet::NetworkDesigner designer;
+    IndustrialNet::DesignResult result = designer.designNetwork(nodes);
+    designer.printDesignReport(nodes, result);
+
+    // 3. 更新 NetworkView 显示
+    if (networkView_) {
+        networkView_->setNetworkData(result, nodes); // 假设 NetworkView 有这个接口
+        networkView_->update();
+    }
+
+    // 4. 用 QMessageBox 或 qDebug 输出设计报告
+    QString report = "=== 网络设计报告 ===\n";
+    for (auto &seg : result.segments) {
+        IndustrialNet::Node startNode = nodes[seg.node_ids.front()];
+        IndustrialNet::Node endNode = nodes[seg.node_ids.back()];
+
+        QString nodeIds;
+        for (size_t i = 0; i < seg.node_ids.size(); ++i) {
+            nodeIds += QString::number(seg.node_ids[i]);
+            if (i != seg.node_ids.size() - 1) nodeIds += ", ";
+        }
+
+        report += QString("网段%1: 节点数 = %2 [%3]\n").arg(seg.id).arg(seg.node_ids.size()).arg(nodeIds);
+        report += QString("  起点 = (%1,%2), 终点 = (%3,%4)\n")
+                      .arg(startNode.x).arg(startNode.y)
+                      .arg(endNode.x).arg(endNode.y);
+    }
+
+    report += QString("总体网络状态: %1").arg(result.overall_ok ? "OK" : "FAIL");
+
+    QMessageBox::information(this, "网络设计完成", report);
+}
 // 更新中继器表格显示
 void MainWindow::updateBridgeTable(const IndustrialNet::DesignResult& result)
 {
@@ -766,7 +827,6 @@ void MainWindow::updateBridgeTable(const IndustrialNet::DesignResult& result)
 }
 
 // CAN ID分配与滤波器设计相关函数实现
-
 std::vector<canopt2::CanNodeInfo> MainWindow::convertToCanNodes() const
 {
     std::vector<canopt2::CanNodeInfo> nodes;
@@ -775,7 +835,8 @@ std::vector<canopt2::CanNodeInfo> MainWindow::convertToCanNodes() const
         canopt2::CanNodeInfo node;
         node.nodeName = qtNode.nodeName.toStdString();
 
-        for (const QString& messageName : qtNode.selectedMessages) {
+        // 只包含发送消息（接收消息不需要分配ID）
+        for (const QString& messageName : qtNode.selectedSendMessages) {
             node.messageNames.push_back(messageName.toStdString());
         }
 
@@ -787,7 +848,7 @@ std::vector<canopt2::CanNodeInfo> MainWindow::convertToCanNodes() const
 
 std::vector<canopt2::CanSignalInfo> MainWindow::convertToCanSignals() const
 {
-    std::vector<canopt2::CanSignalInfo> canSignals;  // 修改1：改为 canSignals
+    std::vector<canopt2::CanSignalInfo> canSignals;
 
     for (const BaudRate& baud : m_baudRateList) {
         canopt2::CanSignalInfo signal;
@@ -795,38 +856,44 @@ std::vector<canopt2::CanSignalInfo> MainWindow::convertToCanSignals() const
         signal.priority = baud.Priority;
         signal.useExtendedId = (baud.FrameType == 1);
 
-        canSignals.push_back(signal);  // 修改2：改为 canSignals
+        canSignals.push_back(signal);
     }
 
-    return canSignals;  // 修改3：改为 canSignals
+    return canSignals;
 }
 
-//void MainWindow::on_allocateIdsButton_clicked()
-//{
- //   if (m_nodeList.isEmpty() || m_baudRateList.isEmpty()) {
- //       QMessageBox::warning(this, "错误", "请先添加节点和消息数据！");
-  //      return;
-  //  }
+// 为每个节点设计滤波器
+std::vector<std::pair<std::string, canopt2::FilterDesignResult>> MainWindow::designFiltersForAllNodes() const
+{
+    std::vector<std::pair<std::string, canopt2::FilterDesignResult>> filterResults;
 
- //   try {
-  //      auto nodes = convertToCanNodes();
-   //     auto canSignals = convertToCanSignals();  // 修改4：改为 canSignals
+    for (const NodeInfo& node : m_nodeList) {
+        // 收集该节点需要接收的所有消息ID
+        std::vector<uint32_t> receiveMessageIds;
 
-   //     bool useExtendedId = ui->extendedIdCheckBox->isChecked();
-   //     uint32_t startId = static_cast<uint32_t>(ui->startIdSpinBox->value());
+        // 查找该节点接收消息对应的ID
+        for (const QString& receiveMessage : node.selectedReceiveMessages) {
+            // 在分配结果中查找这个消息的ID
+            for (const auto& allocation : m_idAllocationResults) {
+                if (allocation.messageName == receiveMessage.toStdString()) {
+                    receiveMessageIds.push_back(allocation.allocatedId);
+                    break;
+                }
+            }
+        }
 
-   //     m_idAllocationResults = canopt2::AllocateCanIds(nodes, canSignals, useExtendedId, startId);  // 修改5：改为 canSignals
+        if (!receiveMessageIds.empty()) {
+            bool useExtendedId = ui->extendedIdCheckBox->isChecked();
+            auto filterResult = canopt2::DesignCanFilter(receiveMessageIds, useExtendedId);
+            // 使用 pair 来关联节点名称和滤波器结果
+            filterResults.emplace_back(node.nodeName.toStdString(), filterResult);
+        }
+    }
 
-   //     updateIdAllocationTable();
+    return filterResults;
+}
 
-   //     QMessageBox::information(this, "成功", QString("已成功分配 %1 个CAN ID").arg(m_idAllocationResults.size()));
-
-   // } catch (const std::exception& e) {
-   //     QMessageBox::critical(this, "错误", QString("CAN ID分配失败: %1").arg(e.what()));
-   // }
-//}
-
-void MainWindow::on_allocateIdsButton_clicked()
+void MainWindow::on_allocateAndDesignButton_clicked()
 {
     if (m_nodeList.isEmpty() || m_baudRateList.isEmpty()) {
         QMessageBox::warning(this, "错误", "请先添加节点和消息数据！");
@@ -834,103 +901,151 @@ void MainWindow::on_allocateIdsButton_clicked()
     }
 
     try {
+        // 步骤1: 分配CAN ID
         auto nodes = convertToCanNodes();
         auto canSignals = convertToCanSignals();
 
-        // 详细调试输出
-        qDebug() << "=== 详细调试信息 ===";
-        qDebug() << "原始数据:";
-        qDebug() << "m_baudRateList 数量:" << m_baudRateList.size();
-        for (int i = 0; i < m_baudRateList.size(); ++i) {
-            qDebug() << "信号" << i << ":" << m_baudRateList[i].Name
-                     << "优先级:" << m_baudRateList[i].Priority;
-        }
-
-        qDebug() << "m_nodeList 数量:" << m_nodeList.size();
-        for (int i = 0; i < m_nodeList.size(); ++i) {
-            qDebug() << "节点" << i << ":" << m_nodeList[i].nodeName
-                     << "消息数量:" << m_nodeList[i].selectedMessages.size();
-            for (int j = 0; j < m_nodeList[i].selectedMessages.size(); ++j) {
-                qDebug() << "  - 消息:" << m_nodeList[i].selectedMessages[j];
-            }
-        }
-
-        qDebug() << "转换后数据:";
-        qDebug() << "canSignals 数量:" << canSignals.size();
-        for (size_t i = 0; i < canSignals.size(); ++i) {
-            qDebug() << "信号" << i << ":" << QString::fromStdString(canSignals[i].messageName)
-                     << "优先级:" << canSignals[i].priority;
-        }
+        qDebug() << "开始分配CAN ID...";
+        qDebug() << "节点数量:" << nodes.size();
+        qDebug() << "信号数量:" << canSignals.size();
 
         bool useExtendedId = ui->extendedIdCheckBox->isChecked();
         uint32_t startId = static_cast<uint32_t>(ui->startIdSpinBox->value());
 
-        qDebug() << "调用参数: useExtendedId =" << useExtendedId << "startId = 0x" << QString::number(startId, 16);
-
         m_idAllocationResults = canopt2::AllocateCanIds(nodes, canSignals, useExtendedId, startId);
 
-        qDebug() << "分配结果数量:" << m_idAllocationResults.size();
-        for (const auto& result : m_idAllocationResults) {
-            qDebug() << "分配结果:" << QString::fromStdString(result.nodeName)
-                     << "-" << QString::fromStdString(result.messageName)
-                     << "- ID: 0x" << QString::number(result.allocatedId, 16);
-        }
+        qDebug() << "CAN ID分配完成，共分配" << m_idAllocationResults.size() << "个ID";
 
+        // 步骤2: 为每个节点设计滤波器
+        qDebug() << "开始设计滤波器...";
+        auto filterResults = designFiltersForAllNodes();
+
+        qDebug() << "滤波器设计完成，共为" << filterResults.size() << "个节点设计滤波器";
+
+        // 步骤3: 更新界面显示
         updateIdAllocationTable();
+        updateFilterDesignTable(filterResults);
 
-        QMessageBox::information(this, "成功", QString("已成功分配 %1 个CAN ID").arg(m_idAllocationResults.size()));
+        // 步骤4: 生成报告
+        std::string fullReport = generateCompleteReport(filterResults);
+        ui->reportTextEdit->setPlainText(QString::fromStdString(fullReport));
+
+        QMessageBox::information(this, "完成",
+                                 QString("CAN网络配置完成！\n\n"
+                                         "分配ID数量: %1\n"
+                                         "设计滤波器节点数: %2")
+                                     .arg(m_idAllocationResults.size())
+                                     .arg(filterResults.size()));
 
     } catch (const std::exception& e) {
-        QMessageBox::critical(this, "错误", QString("CAN ID分配失败: %1").arg(e.what()));
+        QMessageBox::critical(this, "错误", QString("配置失败: %1").arg(e.what()));
     }
 }
-
-// 以下所有函数完全保持不变
-void MainWindow::on_designFilterButton_clicked()
+// 生成完整报告
+std::string MainWindow::generateCompleteReport(const std::vector<std::pair<std::string, canopt2::FilterDesignResult>>& filterResults) const
 {
-    if (m_idAllocationResults.empty()) {
-        QMessageBox::warning(this, "错误", "请先分配CAN ID！");
-        return;
+    std::string report = "=== CAN网络配置完整报告 ===\n\n";
+
+    // 1. CAN ID分配报告
+    report += "1. CAN ID分配结果:\n";
+    report += "-------------------\n";
+
+    // 按节点分组显示
+    std::map<std::string, std::vector<canopt2::IdAllocationResult>> nodeAllocations;
+    for (const auto& allocation : m_idAllocationResults) {
+        nodeAllocations[allocation.nodeName].push_back(allocation);
     }
 
-    try {
-        std::vector<uint32_t> ids;
-        for (const auto& result : m_idAllocationResults) {
-            ids.push_back(result.allocatedId);
+    for (const auto& [nodeName, allocations] : nodeAllocations) {
+        report += "节点: " + nodeName + "\n";
+        for (const auto& allocation : allocations) {
+            report += "  └─ " + allocation.messageName + " : 0x" +
+                      QString("%1").arg(allocation.allocatedId, 0, 16).toStdString() + "\n";
         }
-
-        bool useExtendedId = ui->extendedIdCheckBox->isChecked();
-
-        auto filterResult = canopt2::DesignCanFilter(ids, useExtendedId);
-
-        updateFilterDesignTable(filterResult);
-
-        QMessageBox::information(this, "成功",
-                                 QString("滤波器设计完成！\n模式: %1\n滤波器数量: %2")
-                                     .arg(QString::fromStdString(filterResult.mode))
-                                     .arg(filterResult.filterCount));
-
-    } catch (const std::exception& e) {
-        QMessageBox::critical(this, "错误", QString("滤波器设计失败: %1").arg(e.what()));
+        report += "\n";
     }
+
+    // 2. 滤波器设计报告
+    report += "2. 滤波器配置:\n";
+    report += "-------------------\n";
+
+    for (const auto& [nodeName, filter] : filterResults) {
+        report += "节点: " + nodeName + "\n";
+        report += "  模式: " + filter.mode + "\n";
+        report += "  滤波器数量: " + std::to_string(filter.filterCount) + "\n";
+        report += "  滤波器ID: 0x" + QString("%1").arg(filter.filterId, 0, 16).toStdString() + "\n";
+        report += "  掩码/最大ID: 0x" + QString("%1").arg(filter.maskOrMaxId, 0, 16).toStdString() + "\n";
+        report += "  说明: " + filter.note + "\n\n";
+    }
+
+    // 3. 节点通信统计
+    report += "3. 节点通信统计:\n";
+    report += "-------------------\n";
+
+    for (const NodeInfo& node : m_nodeList) {
+        report += "节点: " + node.nodeName.toStdString() + "\n";
+        report += "  发送消息: " + std::to_string(node.selectedSendMessages.size()) + " 个\n";
+        report += "  接收消息: " + std::to_string(node.selectedReceiveMessages.size()) + " 个\n";
+        report += "\n";
+    }
+
+    return report;
 }
 
+// 更新ID分配表格
+void MainWindow::updateIdAllocationTable()
+{
+    m_idAllocationModel->removeRows(0, m_idAllocationModel->rowCount());
+
+    for (const auto& result : m_idAllocationResults) {
+        QList<QStandardItem*> rowItems;
+
+        rowItems << new QStandardItem(QString::fromStdString(result.nodeName));
+        rowItems << new QStandardItem(QString::fromStdString(result.messageName));
+        rowItems << new QStandardItem(QString("0x%1").arg(result.allocatedId, 0, 16));
+
+        m_idAllocationModel->appendRow(rowItems);
+    }
+
+    ui->idAllocationTableView->resizeColumnsToContents();
+}
+
+// 更新滤波器设计表格（支持多个节点）
+void MainWindow::updateFilterDesignTable(const std::vector<std::pair<std::string, canopt2::FilterDesignResult>>& filterResults)
+{
+    m_filterDesignModel->removeRows(0, m_filterDesignModel->rowCount());
+
+    for (const auto& [nodeName, result] : filterResults) {
+        QList<QStandardItem*> rowItems;
+
+        rowItems << new QStandardItem(QString::fromStdString(nodeName));
+        rowItems << new QStandardItem(QString::number(result.filterCount));
+        rowItems << new QStandardItem(QString("0x%1").arg(result.filterId, 0, 16));
+        rowItems << new QStandardItem(QString("0x%1").arg(result.maskOrMaxId, 0, 16));
+        rowItems << new QStandardItem(QString::fromStdString(result.mode + " - " + result.note));
+
+        m_filterDesignModel->appendRow(rowItems);
+    }
+
+    ui->filterDesignTableView->resizeColumnsToContents();
+}
+
+// 保存报告到文件
 void MainWindow::on_generateReportButton_clicked()
 {
     if (m_idAllocationResults.empty()) {
-        QMessageBox::warning(this, "错误", "没有可用的分配结果！");
+        QMessageBox::warning(this, "错误", "没有可用的配置结果！");
         return;
     }
 
     try {
-        std::string idReport = canopt2::GenerateIdAllocationReport(m_idAllocationResults);
-
-        std::string fullReport = "=== CAN ID 分配报告 ===\n\n";
-        fullReport += idReport;
+        // 重新生成滤波器结果（为了包含在报告中）
+        auto filterResults = designFiltersForAllNodes();
+        std::string fullReport = generateCompleteReport(filterResults);
 
         ui->reportTextEdit->setPlainText(QString::fromStdString(fullReport));
 
-        QString fileName = QFileDialog::getSaveFileName(this, "保存报告", "can_id_report.txt", "文本文件 (*.txt)");
+        QString fileName = QFileDialog::getSaveFileName(this, "保存报告", "can_network_config.txt", "文本文件 (*.txt)");
         if (!fileName.isEmpty()) {
             QFile file(fileName);
             if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
@@ -945,53 +1060,6 @@ void MainWindow::on_generateReportButton_clicked()
         QMessageBox::critical(this, "错误", QString("生成报告失败: %1").arg(e.what()));
     }
 }
-
-void MainWindow::updateIdAllocationTable()
-{
-    m_idAllocationModel->removeRows(0, m_idAllocationModel->rowCount());
-
-    for (const auto& result : m_idAllocationResults) {
-        QList<QStandardItem*> rowItems;
-
-        rowItems << new QStandardItem(QString::fromStdString(result.nodeName));
-        rowItems << new QStandardItem(QString::fromStdString(result.messageName));
-        rowItems << new QStandardItem(QString("0x%1").arg(result.allocatedId, 0, 16));
-
-//QString binaryStr;
-  //      uint32_t id = result.allocatedId;
-  //      bool isExtended = ui->extendedIdCheckBox->isChecked();
- //       int bits = isExtended ? 29 : 11;
-
-  //      for (int i = bits - 1; i >= 0; --i) {
-  //          binaryStr.append((id >> i) & 1 ? '1' : '0');
-  //      }
-   //     rowItems << new QStandardItem(binaryStr);
-
-   //     rowItems << new QStandardItem(isExtended ? "扩展帧" : "标准帧");
-
-        m_idAllocationModel->appendRow(rowItems);
-    }
-
-    ui->idAllocationTableView->resizeColumnsToContents();
-}
-
-void MainWindow::updateFilterDesignTable(const canopt2::FilterDesignResult& result)
-{
-    m_filterDesignModel->removeRows(0, m_filterDesignModel->rowCount());
-
-    QList<QStandardItem*> rowItems;
-
-    rowItems << new QStandardItem(QString::fromStdString(result.mode));
-    rowItems << new QStandardItem(QString::number(result.filterCount));
-    rowItems << new QStandardItem(QString("0x%1").arg(result.filterId, 0, 16));
-    rowItems << new QStandardItem(QString("0x%1").arg(result.maskOrMaxId, 0, 16));
-    rowItems << new QStandardItem(QString::fromStdString(result.note));
-
-    m_filterDesignModel->appendRow(rowItems);
-    ui->filterDesignTableView->resizeColumnsToContents();
-}
-
-
 
 // 设置栏操作
 void MainWindow::onActionOpen()
@@ -1010,5 +1078,23 @@ void MainWindow::onActionExit()
 
 void MainWindow::onActionExport()
 {
-}
+    // 收集数据到report...
 
+    pdfreport::PDFReportGenerator generator;
+    canproject::ComprehensiveReport report;
+
+    QString pdfFile = QFileDialog::getSaveFileName(
+        this,
+        "保存PDF报告",
+        "CAN网络设计报告.pdf",
+        "PDF文件 (*.pdf)"
+        );
+
+    if (!pdfFile.isEmpty()) {
+        if (generator.GenerateTechnicalReport(report, pdfFile)) {
+            QMessageBox::information(this, "成功", "PDF报告生成成功！");
+        } else {
+            QMessageBox::warning(this, "错误", "PDF报告生成失败！");
+        }
+    }
+}
