@@ -1,6 +1,6 @@
 /**
  * @file OptionalCanFeatures.hpp
- * @brief CANÍøÂç¿ÉÑ¡¹¦ÄÜÄ£¿é - Í³Ò»½Ó¿Ú°æ£¨ÃüÃû¿Õ¼ä canopt1£©
+ * @brief CANç½‘ç»œå¯é€‰åŠŸèƒ½æ¨¡å— - ç»Ÿä¸€æ¥å£ç‰ˆï¼ˆå‘½åç©ºé—´ canopt1ï¼‰
  */
 
 #pragma once
@@ -12,11 +12,12 @@
 #include <string>
 #include <tuple>
 #include <vector>
+#include <iostream>
 
 namespace canopt1 {
 
     // ============================================================================
-    // ¹¦ÄÜ1£ºÊÕ·¢Æ÷Ğ±ÂÊ¿ØÖÆµç×èÑ¡Ôñ
+    // åŠŸèƒ½1ï¼šæ”¶å‘å™¨æ–œç‡æ§åˆ¶ç”µé˜»é€‰æ‹©
     // ============================================================================
 
     struct SlopeControlInput {
@@ -49,7 +50,7 @@ namespace canopt1 {
     SlopeControlOutput CalculateSlopeControl(const SlopeControlInput& input);
 
     // ============================================================================
-    // ¹¦ÄÜ2£º±¨ÎÄID·ÖÅä
+    // åŠŸèƒ½2ï¼šæŠ¥æ–‡IDåˆ†é…
     // ============================================================================
 
     struct MessageIdAllocationInput {
@@ -75,7 +76,7 @@ namespace canopt1 {
     MessageIdAllocationOutput AllocateMessageIds(const MessageIdAllocationInput& input);
 
     // ============================================================================
-    // ¹¦ÄÜ3£º±¨ÎÄÂË²¨Æ÷Éè¼Æ
+    // åŠŸèƒ½3ï¼šæŠ¥æ–‡æ»¤æ³¢å™¨è®¾è®¡
     // ============================================================================
 
     enum class FilterMode { kList, kRange, kMask };
@@ -113,7 +114,7 @@ namespace canopt1 {
     FilterDesignOutput DesignMessageFilter(const FilterDesignInput& input);
 
     // ============================================================================
-    // Í³Ò»·â×°½á¹¹Ìå£¨·½°¸A£©
+    // ç»Ÿä¸€å°è£…ç»“æ„ä½“ï¼ˆæ–¹æ¡ˆAï¼‰
     // ============================================================================
 
     struct Canopt1Input {
@@ -143,16 +144,16 @@ namespace canopt1 {
     };
 
     // ============================================================================
-    // Ö÷Í³Ò»¼ÆËãº¯Êı
+    // ä¸»ç»Ÿä¸€è®¡ç®—å‡½æ•°
     // ============================================================================
 
     /**
-     * @brief Í³Ò»Ö´ĞĞËùÓĞÆôÓÃµÄ¿ÉÑ¡¹¦ÄÜ
+     * @brief ç»Ÿä¸€æ‰§è¡Œæ‰€æœ‰å¯ç”¨çš„å¯é€‰åŠŸèƒ½
      */
     Canopt1Output CalculateAll(const Canopt1Input& input);
 
     // ============================================================================
-    // ±¨¸æÎÄ±¾º¯Êı£¨ÓÃÓÚGUIÏÔÊ¾£©
+    // æŠ¥å‘Šæ–‡æœ¬å‡½æ•°ï¼ˆç”¨äºGUIæ˜¾ç¤ºï¼‰
     // ============================================================================
     std::string GenerateSlopeControlReport(const SlopeControlOutput& output);
     std::string GenerateIdAllocationReport(const MessageIdAllocationOutput& output);

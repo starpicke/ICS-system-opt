@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @file CANBitTiming.cpp
  * @brief CAN位时序参数计算模块 - 实现文件
  *

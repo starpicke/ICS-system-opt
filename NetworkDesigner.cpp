@@ -1,4 +1,4 @@
-﻿#include "NetworkDesigner.h"
+#include "NetworkDesigner.h"
 #include <fstream>
 #include <cmath>
 #include <algorithm>

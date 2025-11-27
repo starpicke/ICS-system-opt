@@ -1,6 +1,6 @@
 /**
  * @file CanIdFilterLib.cpp
- * @brief CAN ID·ÖÅäºÍÂË²¨Æ÷Éè¼ÆÄ£¿é - ÊµÏÖÎÄ¼ş
+ * @brief CAN IDåˆ†é…å’Œæ»¤æ³¢å™¨è®¾è®¡æ¨¡å— - å®ç°æ–‡ä»¶
  */
 
 #include "CanIdFilterLib.h"
@@ -10,263 +10,302 @@
 #include <map>
 #include <stdexcept>
 
- // ·ÀÖ¹windows.hÖĞµÄmax/minºê¶¨Òå³åÍ»
+// é˜²æ­¢windows.hä¸­çš„max/minå®å®šä¹‰å†²çª
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 
 namespace canopt2 {
 
-    namespace {
-        // »ñÈ¡×î´óIDÖµ
-        uint32_t GetMaxCanId(bool useExtendedId) {
-            return useExtendedId ? 0x1FFFFFFF : 0x7FF;
-        }
+namespace {
+// è·å–æœ€å¤§IDå€¼
+uint32_t GetMaxCanId(bool useExtendedId) {
+    return useExtendedId ? 0x1FFFFFFF : 0x7FF;
+}
 
-        // ÅĞ¶ÏIDÁĞ±íÊÇ·ñÁ¬Ğø - Ê¹ÓÃ½á¹¹Ìå·µ»ØÖµ
-        struct RangeCheckResult {
-            bool isContinuous;
-            uint32_t minIdValue;
-            uint32_t maxIdValue;
-        };
+// åˆ¤æ–­IDåˆ—è¡¨æ˜¯å¦è¿ç»­ - ä½¿ç”¨ç»“æ„ä½“è¿”å›å€¼
+struct RangeCheckResult {
+    bool isContinuous;
+    uint32_t minIdValue;
+    uint32_t maxIdValue;
+};
 
-        RangeCheckResult CheckContinuousRange(const std::vector<uint32_t>& ids) {
-            RangeCheckResult result;
-            result.isContinuous = false;
-            result.minIdValue = 0;
-            result.maxIdValue = 0;
+RangeCheckResult CheckContinuousRange(const std::vector<uint32_t>& ids) {
+    RangeCheckResult result;
+    result.isContinuous = false;
+    result.minIdValue = 0;
+    result.maxIdValue = 0;
 
-            if (ids.empty()) return result;
+    if (ids.empty()) return result;
 
-            std::vector<uint32_t> sortedIds = ids;
-            std::sort(sortedIds.begin(), sortedIds.end());
+    std::vector<uint32_t> sortedIds = ids;
+    std::sort(sortedIds.begin(), sortedIds.end());
 
-            result.minIdValue = sortedIds.front();
-            result.maxIdValue = sortedIds.back();
+    result.minIdValue = sortedIds.front();
+    result.maxIdValue = sortedIds.back();
 
-            // ¼ì²éÊÇ·ñÁ¬Ğø
-            for (size_t i = 1; i < sortedIds.size(); ++i) {
-                if (sortedIds[i] != sortedIds[i - 1] + 1) {
-                    return result;
-                }
-            }
-
-            result.isContinuous = true;
+    // æ£€æŸ¥æ˜¯å¦è¿ç»­
+    for (size_t i = 1; i < sortedIds.size(); ++i) {
+        if (sortedIds[i] != sortedIds[i - 1] + 1) {
             return result;
-        }
-
-        // ¼ÆËãÑÚÂëÄ£Ê½
-        std::pair<uint32_t, uint32_t> CalculateMaskPattern(const std::vector<uint32_t>& ids, bool useExtendedId) {
-            if (ids.empty()) {
-                return std::make_pair(0u, 0u);
-            }
-
-            uint32_t commonBits = ~0u;
-            uint32_t varyingBits = 0;
-
-            for (size_t i = 0; i < ids.size(); ++i) {
-                uint32_t id = ids[i];
-                commonBits &= id;
-                varyingBits |= (ids[0] ^ id);
-            }
-
-            // ¼ÆËãÑÚÂë£º±ä»¯Î»Îª0£¬¹²Í¬Î»Îª1
-            uint32_t mask = 0;
-            uint32_t temp = varyingBits;
-            while (temp) {
-                mask = (mask << 1) | 1;
-                temp >>= 1;
-            }
-            mask = ~mask;
-
-            // Ó¦ÓÃID·¶Î§ÏŞÖÆ
-            const uint32_t maxMaskValue = GetMaxCanId(useExtendedId);
-            mask &= maxMaskValue;
-
-            return std::make_pair(mask, commonBits & mask);
         }
     }
 
-    std::vector<IdAllocationResult> AllocateCanIds(
-        const std::vector<CanNodeInfo>& nodes,
-        const std::vector<CanSignalInfo>& signals,
-        bool useExtendedId,
-        uint32_t startId)
-    {
-        std::vector<IdAllocationResult> results;
+    result.isContinuous = true;
+    return result;
+}
 
-        // ²ÎÊıÑéÖ¤
-        if (nodes.empty() || signals.empty()) {
-            return results;
-        }
+// è®¡ç®—æ©ç æ¨¡å¼
+std::pair<uint32_t, uint32_t> CalculateMaskPattern(const std::vector<uint32_t>& ids, bool useExtendedId) {
+    if (ids.empty()) {
+        return std::make_pair(0u, 0u);
+    }
 
-        try {
-            // °´ÓÅÏÈ¼¶ÅÅĞòĞÅºÅ£¨ÊıÖµÔ½Ğ¡ÓÅÏÈ¼¶Ô½¸ß£©
-            std::vector<CanSignalInfo> sortedSignals = signals;
-            std::sort(sortedSignals.begin(), sortedSignals.end(),
-                [](const CanSignalInfo& a, const CanSignalInfo& b) {
-                    return a.priority < b.priority;
-                });
+    uint32_t commonBits = ~0u;
+    uint32_t varyingBits = 0;
 
-            uint32_t currentId = startId;
-            uint32_t maximumId = GetMaxCanId(useExtendedId);
-            std::set<uint32_t> usedIds;
+    for (size_t i = 0; i < ids.size(); ++i) {
+        uint32_t id = ids[i];
+        commonBits &= id;
+        varyingBits |= (ids[0] ^ id);
+    }
 
-            // ÎªÃ¿¸öĞÅºÅ·ÖÅäID
-            for (size_t i = 0; i < sortedSignals.size(); ++i) {
-                const CanSignalInfo& signal = sortedSignals[i];
+    // è®¡ç®—æ©ç ï¼šå˜åŒ–ä½ä¸º0ï¼Œå…±åŒä½ä¸º1
+    uint32_t mask = 0;
+    uint32_t temp = varyingBits;
+    while (temp) {
+        mask = (mask << 1) | 1;
+        temp >>= 1;
+    }
+    mask = ~mask;
 
-                // ²éÕÒ°üº¬¸ÃĞÅºÅµÄ½Úµã
-                for (size_t j = 0; j < nodes.size(); ++j) {
-                    const CanNodeInfo& node = nodes[j];
+    // åº”ç”¨IDèŒƒå›´é™åˆ¶
+    const uint32_t maxMaskValue = GetMaxCanId(useExtendedId);
+    mask &= maxMaskValue;
 
-                    if (std::find(node.messageNames.begin(), node.messageNames.end(),
-                        signal.messageName) != node.messageNames.end()) {
+    return std::make_pair(mask, commonBits & mask);
+}
+}
 
-                        // ¼ì²éIDÊÇ·ñ³¬³ö·¶Î§
-                        if (currentId > maximumId) {
-                            return results; // ID¿Õ¼ä²»×ã
-                        }
+std::vector<IdAllocationResult> AllocateCanIds(
+    const std::vector<CanNodeInfo>& nodes,
+    const std::vector<CanSignalInfo>& signals,  // ä¿®æ­£1ï¼šå‚æ•°åæ”¹ä¸ºsignals
+    bool useExtendedId,
+    uint32_t startId)
+{
+    std::vector<IdAllocationResult> results;
 
-                        // ¼ì²éIDÊÇ·ñÒÑ±»Ê¹ÓÃ
-                        while (usedIds.count(currentId) > 0) {
-                            currentId++;
-                            if (currentId > maximumId) {
-                                return results; // ID¿Õ¼ä²»×ã
-                            }
-                        }
-
-                        // ·ÖÅäID
-                        IdAllocationResult result;
-                        result.nodeName = node.nodeName;
-                        result.messageName = signal.messageName;
-                        result.allocatedId = currentId;
-
-                        results.push_back(result);
-                        usedIds.insert(currentId);
-                        currentId++;
-
-                        break; // Ò»¸öĞÅºÅÖ»ĞèÒª·ÖÅäÒ»´ÎID
-                    }
-                }
-            }
-        }
-        catch (const std::exception& e) {
-            // Òì³£´¦Àí
-            results.clear();
-        }
-
+    // å‚æ•°éªŒè¯
+    if (nodes.empty() || signals.empty()) {
         return results;
     }
 
-    FilterDesignResult DesignCanFilter(
-        const std::vector<uint32_t>& ids,
-        bool useExtendedId)
-    {
-        FilterDesignResult result;
+    try {
+        // æŒ‰ä¼˜å…ˆçº§æ’åºä¿¡å·ï¼ˆæ•°å€¼è¶Šå°ä¼˜å…ˆçº§è¶Šé«˜ï¼‰
+        std::vector<CanSignalInfo> sortedSignals = signals;
+        std::sort(sortedSignals.begin(), sortedSignals.end(),
+                  [](const CanSignalInfo& a, const CanSignalInfo& b) {
+                      return a.priority < b.priority;
+                  });
 
-        try {
-            if (ids.empty()) {
-                result.note = "IDÁĞ±íÎª¿Õ";
-                return result;
-            }
+        uint32_t currentId = startId;
+        uint32_t maximumId = GetMaxCanId(useExtendedId);
+        std::set<uint32_t> usedIds;
+        std::set<std::string> allocatedSignals;  // æ–°å¢ï¼šè®°å½•å·²åˆ†é…çš„ä¿¡å·åç§°
 
-            const uint32_t maximumIdValue = GetMaxCanId(useExtendedId);
+        // ä¸ºæ¯ä¸ªä¿¡å·åˆ†é…ID
+        for (size_t i = 0; i < sortedSignals.size(); ++i) {
+            const CanSignalInfo& signal = sortedSignals[i];  // ä¿®æ­£2ï¼šå˜é‡åæ”¹ä¸ºsignal
 
-            // ÑéÖ¤ËùÓĞID¶¼ÔÚÓĞĞ§·¶Î§ÄÚ
-            for (size_t i = 0; i < ids.size(); ++i) {
-                uint32_t id = ids[i];
-                if (id > maximumIdValue) {
-                    result.note = "ID³¬³öÓĞĞ§·¶Î§";
-                    return result;
+            // ä¿®æ­£3ï¼šæ£€æŸ¥ä¿¡å·æ˜¯å¦å·²ç»åˆ†é…è¿‡
+           // if (allocatedSignals.find(signal.messageName) != allocatedSignals.end()) {
+           //     continue; // å¦‚æœå·²ç»åˆ†é…è¿‡ï¼Œè·³è¿‡è¿™ä¸ªä¿¡å·
+           // }
+
+            bool foundNode = false;
+
+            // æŸ¥æ‰¾åŒ…å«è¯¥ä¿¡å·çš„èŠ‚ç‚¹
+            for (size_t j = 0; j < nodes.size(); ++j) {
+                const CanNodeInfo& node = nodes[j];
+
+                if (std::find(node.messageNames.begin(), node.messageNames.end(),
+                              signal.messageName) != node.messageNames.end()) {
+
+                    foundNode = true;
+
+                    // æ£€æŸ¥IDæ˜¯å¦è¶…å‡ºèŒƒå›´
+                    if (currentId > maximumId) {
+                        return results; // IDç©ºé—´ä¸è¶³
+                    }
+
+                    // æ£€æŸ¥IDæ˜¯å¦å·²è¢«ä½¿ç”¨
+                    while (usedIds.count(currentId) > 0) {
+                        currentId++;
+                        if (currentId > maximumId) {
+                            return results; // IDç©ºé—´ä¸è¶³
+                        }
+                    }
+
+                    // åˆ†é…ID
+                    IdAllocationResult result;
+                    result.nodeName = node.nodeName;
+                    result.messageName = signal.messageName;
+                    result.allocatedId = currentId;
+
+                    results.push_back(result);
+                    usedIds.insert(currentId);
+                    allocatedSignals.insert(signal.messageName);  // è®°å½•å·²åˆ†é…çš„ä¿¡å·
+                    currentId++;
+
+                    //break; // ä¸€ä¸ªä¿¡å·åªéœ€è¦åˆ†é…ä¸€æ¬¡ID
                 }
             }
 
-            // È¥ÖØ²¢ÅÅĞò
-            std::vector<uint32_t> uniqueIds = ids;
-            std::sort(uniqueIds.begin(), uniqueIds.end());
-            std::vector<uint32_t>::iterator last = std::unique(uniqueIds.begin(), uniqueIds.end());
-            uniqueIds.erase(last, uniqueIds.end());
+            // ä¿®æ­£4ï¼šå¦‚æœä¿¡å·æ²¡æœ‰è¢«ä»»ä½•èŠ‚ç‚¹åŒ…å«ï¼Œä¹Ÿåˆ†é…ä¸€ä¸ªIDï¼ˆå¯é€‰ï¼‰
+            if (!foundNode) {
+                // æ£€æŸ¥IDæ˜¯å¦è¶…å‡ºèŒƒå›´
+                if (currentId > maximumId) {
+                    return results; // IDç©ºé—´ä¸è¶³
+                }
 
-            // ³¢ÊÔ·¶Î§Ä£Ê½ - Ê¹ÓÃ½á¹¹Ìå·µ»ØÖµ
-            RangeCheckResult rangeResult = CheckContinuousRange(uniqueIds);
-            if (rangeResult.isContinuous) {
-                result.mode = "range";
-                result.filterCount = 1;
-                result.filterId = rangeResult.minIdValue;
-                result.maskOrMaxId = rangeResult.maxIdValue;
-                result.note = "ÍÆ¼ö·¶Î§ÂË²¨";
+                // æ£€æŸ¥IDæ˜¯å¦å·²è¢«ä½¿ç”¨
+                while (usedIds.count(currentId) > 0) {
+                    currentId++;
+                    if (currentId > maximumId) {
+                        return results; // IDç©ºé—´ä¸è¶³
+                    }
+                }
+
+                // åˆ†é…IDï¼ˆæ²¡æœ‰å¯¹åº”èŠ‚ç‚¹ï¼‰
+                IdAllocationResult result;
+                result.nodeName = "æœªæŒ‡å®š";
+                result.messageName = signal.messageName;
+                result.allocatedId = currentId;
+
+                results.push_back(result);
+                usedIds.insert(currentId);
+                allocatedSignals.insert(signal.messageName);
+                currentId++;
+            }
+        }
+    }
+    catch (const std::exception& e) {
+        // å¼‚å¸¸å¤„ç†
+        results.clear();
+    }
+
+    return results;
+}
+
+// ä»¥ä¸‹å‡½æ•°å®Œå…¨ä¿æŒä¸å˜
+FilterDesignResult DesignCanFilter(
+    const std::vector<uint32_t>& ids,
+    bool useExtendedId)
+{
+    FilterDesignResult result;
+
+    try {
+        if (ids.empty()) {
+            result.note = "IDåˆ—è¡¨ä¸ºç©º";
+            return result;
+        }
+
+        const uint32_t maximumIdValue = GetMaxCanId(useExtendedId);
+
+        // éªŒè¯æ‰€æœ‰IDéƒ½åœ¨æœ‰æ•ˆèŒƒå›´å†…
+        for (size_t i = 0; i < ids.size(); ++i) {
+            uint32_t id = ids[i];
+            if (id > maximumIdValue) {
+                result.note = "IDè¶…å‡ºæœ‰æ•ˆèŒƒå›´";
                 return result;
             }
-
-            // ³¢ÊÔÑÚÂëÄ£Ê½
-            std::pair<uint32_t, uint32_t> maskResult = CalculateMaskPattern(uniqueIds, useExtendedId);
-            uint32_t mask = maskResult.first;
-            uint32_t filterId = maskResult.second;
-
-            if (mask != 0 && mask != GetMaxCanId(useExtendedId)) {
-                result.mode = "mask";
-                result.filterCount = 1;
-                result.filterId = filterId;
-                result.maskOrMaxId = mask;
-                result.note = "ÍÆ¼öÑÚÂëÂË²¨";
-                return result;
-            }
-
-            // »ØÍËµ½ÁĞ±íÄ£Ê½
-            result.mode = "list";
-            result.filterCount = static_cast<uint32_t>(uniqueIds.size());
-            result.filterId = uniqueIds.front();
-            result.maskOrMaxId = uniqueIds.back();
-            result.note = "Ê¹ÓÃÁĞ±íÄ£Ê½";
-
-        }
-        catch (const std::exception& e) {
-            result.note = "Éè¼ÆÊ§°Ü: " + std::string(e.what());
         }
 
-        return result;
+        // å»é‡å¹¶æ’åº
+        std::vector<uint32_t> uniqueIds = ids;
+        std::sort(uniqueIds.begin(), uniqueIds.end());
+        std::vector<uint32_t>::iterator last = std::unique(uniqueIds.begin(), uniqueIds.end());
+        uniqueIds.erase(last, uniqueIds.end());
+
+        // å°è¯•èŒƒå›´æ¨¡å¼ - ä½¿ç”¨ç»“æ„ä½“è¿”å›å€¼
+        RangeCheckResult rangeResult = CheckContinuousRange(uniqueIds);
+        if (rangeResult.isContinuous) {
+            result.mode = "range";
+            result.filterCount = 1;
+            result.filterId = rangeResult.minIdValue;
+            result.maskOrMaxId = rangeResult.maxIdValue;
+            result.note = "æ¨èèŒƒå›´æ»¤æ³¢";
+            return result;
+        }
+
+        // å°è¯•æ©ç æ¨¡å¼
+        std::pair<uint32_t, uint32_t> maskResult = CalculateMaskPattern(uniqueIds, useExtendedId);
+        uint32_t mask = maskResult.first;
+        uint32_t filterId = maskResult.second;
+
+        if (mask != 0 && mask != GetMaxCanId(useExtendedId)) {
+            result.mode = "mask";
+            result.filterCount = 1;
+            result.filterId = filterId;
+            result.maskOrMaxId = mask;
+            result.note = "æ¨èæ©ç æ»¤æ³¢";
+            return result;
+        }
+
+        // å›é€€åˆ°åˆ—è¡¨æ¨¡å¼
+        result.mode = "list";
+        result.filterCount = static_cast<uint32_t>(uniqueIds.size());
+        result.filterId = uniqueIds.front();
+        result.maskOrMaxId = uniqueIds.back();
+        result.note = "ä½¿ç”¨åˆ—è¡¨æ¨¡å¼";
+
+    }
+    catch (const std::exception& e) {
+        result.note = "è®¾è®¡å¤±è´¥: " + std::string(e.what());
     }
 
-    std::string GenerateIdAllocationReport(const std::vector<IdAllocationResult>& results) {
-        std::ostringstream oss;
+    return result;
+}
 
-        for (size_t i = 0; i < results.size(); ++i) {
-            const IdAllocationResult& result = results[i];
-            oss << "½Úµã: " << result.nodeName
-                << ", ĞÅºÅ: " << result.messageName
-                << ", ID: 0x" << std::hex << result.allocatedId << std::dec;
+std::string GenerateIdAllocationReport(const std::vector<IdAllocationResult>& results) {
+    std::ostringstream oss;
 
-            if (i < results.size() - 1) {
-                oss << "\n";
-            }
+    for (size_t i = 0; i < results.size(); ++i) {
+        const IdAllocationResult& result = results[i];
+        oss << "èŠ‚ç‚¹: " << result.nodeName
+            << ", ä¿¡å·: " << result.messageName
+            << ", ID: 0x" << std::hex << result.allocatedId << std::dec;
+
+        if (i < results.size() - 1) {
+            oss << "\n";
         }
-
-        return oss.str();
     }
 
-    std::string GenerateFilterDesignReport(const FilterDesignResult& result) {
-        std::ostringstream oss;
-        oss << "=== ÂË²¨Æ÷Éè¼Æ ===" << "\n";
-        oss << "Ä£Ê½: " << result.mode << "\n";
-        oss << "ÊıÁ¿: " << result.filterCount << "\n";
+    return oss.str();
+}
 
-        if (result.mode == "range") {
-            oss << "MinId: 0x" << std::hex << result.filterId << std::dec << "\n";
-            oss << "MaxId: 0x" << std::hex << result.maskOrMaxId << std::dec << "\n";
-        }
-        else if (result.mode == "mask") {
-            oss << "FilterId: 0x" << std::hex << result.filterId << std::dec << "\n";
-            oss << "Mask/Max: 0x" << std::hex << result.maskOrMaxId << std::dec << "\n";
-        }
-        else if (result.mode == "list") {
-            oss << "FirstId: 0x" << std::hex << result.filterId << std::dec << "\n";
-            oss << "LastId: 0x" << std::hex << result.maskOrMaxId << std::dec << "\n";
-        }
+std::string GenerateFilterDesignReport(const FilterDesignResult& result) {
+    std::ostringstream oss;
+    oss << "=== æ»¤æ³¢å™¨è®¾è®¡ ===" << "\n";
+    oss << "æ¨¡å¼: " << result.mode << "\n";
+    oss << "æ•°é‡: " << result.filterCount << "\n";
 
-        oss << "ËµÃ÷: " << result.note;
-
-        return oss.str();
+    if (result.mode == "range") {
+        oss << "MinId: 0x" << std::hex << result.filterId << std::dec << "\n";
+        oss << "MaxId: 0x" << std::hex << result.maskOrMaxId << std::dec << "\n";
     }
+    else if (result.mode == "mask") {
+        oss << "FilterId: 0x" << std::hex << result.filterId << std::dec << "\n";
+        oss << "Mask/Max: 0x" << std::hex << result.maskOrMaxId << std::dec << "\n";
+    }
+    else if (result.mode == "list") {
+        oss << "FirstId: 0x" << std::hex << result.filterId << std::dec << "\n";
+        oss << "LastId: 0x" << std::hex << result.maskOrMaxId << std::dec << "\n";
+    }
+
+    oss << "è¯´æ˜: " << result.note;
+
+    return oss.str();
+}
 
 } // namespace canopt2

@@ -42,3 +42,24 @@ QTableView::item:selected {
 QTableView::item:hover {
     background-color: #e9ecef;
 }
+
+QTableView::item, QTabWidget::item{
+    background: transparent;
+        outline-style: none;
+        border: none;
+}
+
+QTableView::item:hover {
+        background: $selected;
+    border: 1px solid $focused;
+}
+
+QTableView::item:selected {
+        background: $selected;
+        color: $grad1a;
+}
+
+QTableView::item:selected:active {
+        background: $pressed;
+        color: $grad1a;
+}

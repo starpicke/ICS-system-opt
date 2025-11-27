@@ -1,15 +1,15 @@
 /**
  * @file CanIdFilterLib.h
- * @brief CAN ID·ÖÅäºÍÂË²¨Æ÷Éè¼ÆÄ£¿é - Í·ÎÄ¼ş
+ * @brief CAN IDåˆ†é…å’Œæ»¤æ³¢å™¨è®¾è®¡æ¨¡å— - å¤´æ–‡ä»¶
  *
- * ±¾Ä£¿éÊµÏÖÁ½¸öºËĞÄ¹¦ÄÜ£º
- * 1. CAN ID·ÖÅä - ¸ù¾İ½ÚµãºÍĞÅºÅĞÅÏ¢×Ô¶¯·ÖÅäCAN ID
- * 2. ÂË²¨Æ÷Éè¼Æ - Éè¼ÆCAN½ÓÊÕÂË²¨Æ÷ÅäÖÃ£¨ÁĞ±í/·¶Î§/ÑÚÂëÄ£Ê½£©
+ * æœ¬æ¨¡å—å®ç°ä¸¤ä¸ªæ ¸å¿ƒåŠŸèƒ½ï¼š
+ * 1. CAN IDåˆ†é… - æ ¹æ®èŠ‚ç‚¹å’Œä¿¡å·ä¿¡æ¯è‡ªåŠ¨åˆ†é…CAN ID
+ * 2. æ»¤æ³¢å™¨è®¾è®¡ - è®¾è®¡CANæ¥æ”¶æ»¤æ³¢å™¨é…ç½®ï¼ˆåˆ—è¡¨/èŒƒå›´/æ©ç æ¨¡å¼ï¼‰
  *
- * Éè¼ÆÌØµã£º
- * - ±ÜÃâÓëQtÏîÄ¿ÖĞÒÑÓĞµÄNodeInfoºÍBaudRate½á¹¹Ìå³åÍ»
- * - Ê¹ÓÃ¶ÀÁ¢µÄ½á¹¹ÌåÃüÃû£¬±ãÓÚQtÕûºÏ
- * - Ö§³Ö±ê×¼ID£¨11Î»£©ºÍÀ©Õ¹ID£¨29Î»£©Á½ÖÖÄ£Ê½
+ * è®¾è®¡ç‰¹ç‚¹ï¼š
+ * - é¿å…ä¸Qté¡¹ç›®ä¸­å·²æœ‰çš„NodeInfoå’ŒBaudRateç»“æ„ä½“å†²çª
+ * - ä½¿ç”¨ç‹¬ç«‹çš„ç»“æ„ä½“å‘½åï¼Œä¾¿äºQtæ•´åˆ
+ * - æ”¯æŒæ ‡å‡†IDï¼ˆ11ä½ï¼‰å’Œæ‰©å±•IDï¼ˆ29ä½ï¼‰ä¸¤ç§æ¨¡å¼
  */
 
 #pragma once
@@ -21,74 +21,74 @@
 namespace canopt2 {
 
     // ============================================================================
-    // ºËĞÄÊı¾İ½á¹¹£¨±ÜÃâÓëQtÏîÄ¿ÖĞµÄ½á¹¹Ìå³åÍ»£©
+    // æ ¸å¿ƒæ•°æ®ç»“æ„ï¼ˆé¿å…ä¸Qté¡¹ç›®ä¸­çš„ç»“æ„ä½“å†²çªï¼‰
     // ============================================================================
 
     /**
      * @struct CanNodeInfo
-     * @brief CAN½ÚµãĞÅÏ¢£¨±ÜÃâÓëQtÖĞµÄNodeInfo³åÍ»£©
+     * @brief CANèŠ‚ç‚¹ä¿¡æ¯ï¼ˆé¿å…ä¸Qtä¸­çš„NodeInfoå†²çªï¼‰
      */
     struct CanNodeInfo {
-        std::string nodeName;                      ///< ½ÚµãÃû³Æ
-        std::vector<std::string> messageNames;     ///< ½Úµã°üº¬µÄÏûÏ¢Ãû³ÆÁĞ±í
+        std::string nodeName;                      ///< èŠ‚ç‚¹åç§°
+        std::vector<std::string> messageNames;     ///< èŠ‚ç‚¹åŒ…å«çš„æ¶ˆæ¯åç§°åˆ—è¡¨
     };
 
     /**
      * @struct CanSignalInfo
-     * @brief CANĞÅºÅĞÅÏ¢£¨±ÜÃâÓëQtÖĞµÄBaudRate³åÍ»£©
+     * @brief CANä¿¡å·ä¿¡æ¯ï¼ˆé¿å…ä¸Qtä¸­çš„BaudRateå†²çªï¼‰
      */
     struct CanSignalInfo {
-        std::string messageName;                   ///< ÏûÏ¢Ãû³Æ
-        int priority;                              ///< ÓÅÏÈ¼¶£¨ÊıÖµÔ½Ğ¡ÓÅÏÈ¼¶Ô½¸ß£©
-        bool useExtendedId;                        ///< ÊÇ·ñÊ¹ÓÃÀ©Õ¹ID
+        std::string messageName;                   ///< æ¶ˆæ¯åç§°
+        int priority;                              ///< ä¼˜å…ˆçº§ï¼ˆæ•°å€¼è¶Šå°ä¼˜å…ˆçº§è¶Šé«˜ï¼‰
+        bool useExtendedId;                        ///< æ˜¯å¦ä½¿ç”¨æ‰©å±•ID
     };
 
     /**
      * @struct IdAllocationResult
-     * @brief ID·ÖÅä½á¹û
+     * @brief IDåˆ†é…ç»“æœ
      */
     struct IdAllocationResult {
-        std::string nodeName;                      ///< ½ÚµãÃû³Æ
-        std::string messageName;                   ///< ÏûÏ¢Ãû³Æ
-        uint32_t allocatedId;                      ///< ·ÖÅäµÄID
+        std::string nodeName;                      ///< èŠ‚ç‚¹åç§°
+        std::string messageName;                   ///< æ¶ˆæ¯åç§°
+        uint32_t allocatedId;                      ///< åˆ†é…çš„ID
     };
 
     /**
      * @struct FilterDesignResult
-     * @brief ÂË²¨Æ÷Éè¼Æ½á¹û
+     * @brief æ»¤æ³¢å™¨è®¾è®¡ç»“æœ
      */
     struct FilterDesignResult {
-        std::string mode;                          ///< ÂË²¨Ä£Ê½£º"list"/"range"/"mask"
-        uint32_t filterCount;                      ///< ÂË²¨Æ÷ÊıÁ¿
-        uint32_t filterId;                         ///< ÂË²¨Æ÷ID£¨ÁĞ±í/·¶Î§/ÑÚÂëÄ£Ê½£©
-        uint32_t maskOrMaxId;                      ///< ÑÚÂëÖµ»ò×î´óID£¨·¶Î§Ä£Ê½£©
-        std::string note;                          ///< ÅäÖÃËµÃ÷
+        std::string mode;                          ///< æ»¤æ³¢æ¨¡å¼ï¼š"list"/"range"/"mask"
+        uint32_t filterCount;                      ///< æ»¤æ³¢å™¨æ•°é‡
+        uint32_t filterId;                         ///< æ»¤æ³¢å™¨IDï¼ˆåˆ—è¡¨/èŒƒå›´/æ©ç æ¨¡å¼ï¼‰
+        uint32_t maskOrMaxId;                      ///< æ©ç å€¼æˆ–æœ€å¤§IDï¼ˆèŒƒå›´æ¨¡å¼ï¼‰
+        std::string note;                          ///< é…ç½®è¯´æ˜
     };
 
     // ============================================================================
-    // º¯Êı½Ó¿Ú
+    // å‡½æ•°æ¥å£
     // ============================================================================
 
     /**
-     * @brief ·ÖÅäCAN ID
-     * @param nodes ½ÚµãĞÅÏ¢ÁĞ±í
-     * @param signals ĞÅºÅĞÅÏ¢ÁĞ±í
-     * @param useExtendedId ÊÇ·ñÊ¹ÓÃÀ©Õ¹ID
-     * @param startId ÆğÊ¼ID
-     * @return ID·ÖÅä½á¹ûÁĞ±í
+     * @brief åˆ†é…CAN ID
+     * @param nodes èŠ‚ç‚¹ä¿¡æ¯åˆ—è¡¨
+     * @param m_signals ä¿¡å·ä¿¡æ¯åˆ—è¡¨
+     * @param useExtendedId æ˜¯å¦ä½¿ç”¨æ‰©å±•ID
+     * @param startId èµ·å§‹ID
+     * @return IDåˆ†é…ç»“æœåˆ—è¡¨
      */
     std::vector<IdAllocationResult> AllocateCanIds(
         const std::vector<CanNodeInfo>& nodes,
-        const std::vector<CanSignalInfo>& signals,
+        const std::vector<CanSignalInfo>& m_signals,
         bool useExtendedId,
         uint32_t startId = 0
     );
 
     /**
-     * @brief Éè¼ÆCAN½ÓÊÕÂË²¨Æ÷
-     * @param ids Òª½ÓÊÜµÄIDÁĞ±í
-     * @param useExtendedId ÊÇ·ñÊ¹ÓÃÀ©Õ¹ID
-     * @return ÂË²¨Æ÷Éè¼Æ½á¹û
+     * @brief è®¾è®¡CANæ¥æ”¶æ»¤æ³¢å™¨
+     * @param ids è¦æ¥å—çš„IDåˆ—è¡¨
+     * @param useExtendedId æ˜¯å¦ä½¿ç”¨æ‰©å±•ID
+     * @return æ»¤æ³¢å™¨è®¾è®¡ç»“æœ
      */
     FilterDesignResult DesignCanFilter(
         const std::vector<uint32_t>& ids,
@@ -96,16 +96,16 @@ namespace canopt2 {
     );
 
     /**
-     * @brief Éú³ÉID·ÖÅä±¨¸æ
-     * @param results ID·ÖÅä½á¹û
-     * @return ¸ñÊ½»¯µÄ±¨¸æ×Ö·û´®
+     * @brief ç”ŸæˆIDåˆ†é…æŠ¥å‘Š
+     * @param results IDåˆ†é…ç»“æœ
+     * @return æ ¼å¼åŒ–çš„æŠ¥å‘Šå­—ç¬¦ä¸²
      */
     std::string GenerateIdAllocationReport(const std::vector<IdAllocationResult>& results);
 
     /**
-     * @brief Éú³ÉÂË²¨Æ÷Éè¼Æ±¨¸æ
-     * @param result ÂË²¨Æ÷Éè¼Æ½á¹û
-     * @return ¸ñÊ½»¯µÄ±¨¸æ×Ö·û´®
+     * @brief ç”Ÿæˆæ»¤æ³¢å™¨è®¾è®¡æŠ¥å‘Š
+     * @param result æ»¤æ³¢å™¨è®¾è®¡ç»“æœ
+     * @return æ ¼å¼åŒ–çš„æŠ¥å‘Šå­—ç¬¦ä¸²
      */
     std::string GenerateFilterDesignReport(const FilterDesignResult& result);
 

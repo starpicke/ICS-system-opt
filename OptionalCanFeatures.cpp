@@ -1,12 +1,12 @@
 /**
  * @file OptionalCanFeatures.cpp
- * @brief CANÍøÂç¿ÉÑ¡¹¦ÄÜÄ£¿é - ÊµÏÖÎÄ¼ş£¨ÃüÃû¿Õ¼ä canopt1£©
+ * @brief CANç½‘ç»œå¯é€‰åŠŸèƒ½æ¨¡å— - å®ç°æ–‡ä»¶ï¼ˆå‘½åç©ºé—´ canopt1ï¼‰
  *
- * Óë OptionalCanFeatures.hpp ÅäÌ×£¬Ìá¹©£º
- *  - Ğ±ÂÊ¿ØÖÆµç×èÑ¡Ôñ
- *  - ±¨ÎÄ ID ·ÖÅä
- *  - ±¨ÎÄÂË²¨Æ÷Éè¼Æ
- *  - Ò»¸öÍ³Ò»Èë¿Ú CalculateAll£¬¸ù¾İÊäÈë enable ±êÖ¾Ö´ĞĞ¶ÔÓ¦¹¦ÄÜ
+ * ä¸ OptionalCanFeatures.hpp é…å¥—ï¼Œæä¾›ï¼š
+ *  - æ–œç‡æ§åˆ¶ç”µé˜»é€‰æ‹©
+ *  - æŠ¥æ–‡ ID åˆ†é…
+ *  - æŠ¥æ–‡æ»¤æ³¢å™¨è®¾è®¡
+ *  - ä¸€ä¸ªç»Ÿä¸€å…¥å£ CalculateAllï¼Œæ ¹æ®è¾“å…¥ enable æ ‡å¿—æ‰§è¡Œå¯¹åº”åŠŸèƒ½
  */
 
 #include "OptionalCanFeatures.hpp"
@@ -20,17 +20,17 @@
 namespace canopt1 {
 
     // ----------------------------------------------------------------------------
-    // ¾Ö²¿³£Á¿Óë°ïÖúº¯Êı£¨Ğ±ÂÊ¿ØÖÆ£©
+    // å±€éƒ¨å¸¸é‡ä¸å¸®åŠ©å‡½æ•°ï¼ˆæ–œç‡æ§åˆ¶ï¼‰
     // ----------------------------------------------------------------------------
     namespace {
-        // ³£ÓÃ×èÖµÁĞ±í£¨E24µÈ³£¼û£©¡ª¡ª¿É¸ù¾İÊµ¼Ê¿â´æÀ©Õ¹
+        // å¸¸ç”¨é˜»å€¼åˆ—è¡¨ï¼ˆE24ç­‰å¸¸è§ï¼‰â€”â€”å¯æ ¹æ®å®é™…åº“å­˜æ‰©å±•
         const std::vector<double> kCommonResistors = {
         10, 15, 20, 22, 27, 30, 33, 39, 47, 51, 56, 68, 75, 82, 100,
         120, 150, 200, 220, 270, 330, 390, 470, 510, 560, 680, 750,
         820, 1000, 1200, 1500, 2000
         };
 
-        // Ğ±ÂÊÄ£Ê½ÅäÖÃ±í
+        // æ–œç‡æ¨¡å¼é…ç½®è¡¨
         constexpr struct SlopeProfile {
             const char* mode;
             double resistor;
@@ -44,54 +44,54 @@ namespace canopt1 {
             {"fast",   10.0,   50.0,  50.0,1000000.0,   0.0}
         };
 
-        constexpr double kRiseTimeFactor = 2.2; // 10%-90% ÉÏÉıÊ±¼ä½üËÆÏµÊı
+        constexpr double kRiseTimeFactor = 2.2; // 10%-90% ä¸Šå‡æ—¶é—´è¿‘ä¼¼ç³»æ•°
 
         static double CalculateRiseTimeNs(double resistanceOhm, double loadCapacitancePf) {
             const double capacitanceF = loadCapacitancePf * 1e-12;
-            // t_r = k * R * C, ×ª»»µ½ ns µ¥Î»
+            // t_r = k * R * C, è½¬æ¢åˆ° ns å•ä½
             return kRiseTimeFactor * resistanceOhm * capacitanceF * 1e9;
         }
     } // namespace
 
     // ----------------------------------------------------------------------------
-    // Ğ±ÂÊ¿ØÖÆÊµÏÖ
+    // æ–œç‡æ§åˆ¶å®ç°
     // ----------------------------------------------------------------------------
     SlopeControlOutput CalculateSlopeControl(const SlopeControlInput& input) {
         SlopeControlOutput output;
 
         try {
-            // ÊäÈëÑéÖ¤
+            // è¾“å…¥éªŒè¯
             if (input.baudrate == 0) {
-                output.statusMessage = "²¨ÌØÂÊ±ØĞë´óÓÚ0";
+                output.statusMessage = "æ³¢ç‰¹ç‡å¿…é¡»å¤§äº0";
                 return output;
             }
             if (input.targetRiseTimeNs <= 0.0) {
-                output.statusMessage = "Ä¿±êÉÏÉıÊ±¼ä±ØĞë´óÓÚ0";
+                output.statusMessage = "ç›®æ ‡ä¸Šå‡æ—¶é—´å¿…é¡»å¤§äº0";
                 return output;
             }
             if (input.loadCapacitancePf <= 0.0) {
-                output.statusMessage = "¸ºÔØµçÈİ±ØĞë´óÓÚ0";
+                output.statusMessage = "è´Ÿè½½ç”µå®¹å¿…é¡»å¤§äº0";
                 return output;
             }
 
-            // Î»Ê±¼ä£¨ns£©
+            // ä½æ—¶é—´ï¼ˆnsï¼‰
             const double bitTimeNs = 1e9 / static_cast<double>(input.baudrate);
             output.bitTimeNs = bitTimeNs;
 
-            // ×î´óÔÊĞíÉÏÉıÊ±¼ä = maxRiseTimeRatio * Î»Ê±¼ä
+            // æœ€å¤§å…è®¸ä¸Šå‡æ—¶é—´ = maxRiseTimeRatio * ä½æ—¶é—´
             const double maxRiseTimeNs = bitTimeNs * input.maxRiseTimeRatio;
 
-            // ÏŞÖÆÄ¿±êÉÏÉıÊ±¼ä
+            // é™åˆ¶ç›®æ ‡ä¸Šå‡æ—¶é—´
             const double clampedTarget = std::min(input.targetRiseTimeNs, maxRiseTimeNs);
             output.targetRiseTimeNs = clampedTarget;
             if (input.targetRiseTimeNs > maxRiseTimeNs) {
                 std::ostringstream os;
-                os << "Ä¿±êÉÏÉıÊ±¼ä " << input.targetRiseTimeNs << " ns ³¬¹ıÔÊĞíÖµ£¬ÒÑµ÷ÕûÎª "
+                os << "ç›®æ ‡ä¸Šå‡æ—¶é—´ " << input.targetRiseTimeNs << " ns è¶…è¿‡å…è®¸å€¼ï¼Œå·²è°ƒæ•´ä¸º "
                     << clampedTarget << " ns";
                 output.warnings.push_back(os.str());
             }
 
-            // ÔÚ³£ÓÃ×èÖµÖĞËÑË÷×î½Ó½üÄ¿±êÉÏÉıÊ±¼äµÄ×èÖµ
+            // åœ¨å¸¸ç”¨é˜»å€¼ä¸­æœç´¢æœ€æ¥è¿‘ç›®æ ‡ä¸Šå‡æ—¶é—´çš„é˜»å€¼
             double bestResistor = kCommonResistors.front();
             double minError = std::numeric_limits<double>::max();
             for (double r : kCommonResistors) {
@@ -109,7 +109,7 @@ namespace canopt1 {
             output.riseTimeRatioPct = (actualRiseNs / bitTimeNs) * 100.0;
             output.isSuitable = actualRiseNs <= maxRiseTimeNs;
 
-            // »ùÓÚ²¨ÌØÂÊÓëµçÀÂ³¤¶ÈÍÆ¼öÄ£Ê½
+            // åŸºäºæ³¢ç‰¹ç‡ä¸ç”µç¼†é•¿åº¦æ¨èæ¨¡å¼
             for (const auto& p : kSlopeProfiles) {
                 const bool baudCond = (static_cast<double>(input.baudrate) <= p.maxBaudrate) || (std::string(p.mode) == "fast");
                 const bool lenCond = input.cableLengthMeters >= p.minCableLength;
@@ -121,8 +121,8 @@ namespace canopt1 {
                     output.modeRiseTimeNs = p.riseTime;
                     output.modeFallTimeNs = p.fallTime;
                     std::ostringstream os;
-                    os << "¸ù¾İ²¨ÌØÂÊ " << input.baudrate << " bps ÓëÏßÂ·³¤¶È "
-                        << input.cableLengthMeters << " m Ñ¡Ôñ " << p.mode << " Ä£Ê½";
+                    os << "æ ¹æ®æ³¢ç‰¹ç‡ " << input.baudrate << " bps ä¸çº¿è·¯é•¿åº¦ "
+                        << input.cableLengthMeters << " m é€‰æ‹© " << p.mode << " æ¨¡å¼";
                     output.modeReasoning = os.str();
                     break;
                 }
@@ -133,21 +133,21 @@ namespace canopt1 {
                 output.modeResistorOhm = fallback.resistor;
                 output.modeRiseTimeNs = fallback.riseTime;
                 output.modeFallTimeNs = fallback.fallTime;
-                output.modeReasoning = "Î´Æ¥Åäµ½ºÏÊÊÄ£Ê½£¬Ä¬ÈÏÊ¹ÓÃ fast Ä£Ê½";
+                output.modeReasoning = "æœªåŒ¹é…åˆ°åˆé€‚æ¨¡å¼ï¼Œé»˜è®¤ä½¿ç”¨ fast æ¨¡å¼";
             }
 
             output.calculationSuccess = true;
-            output.statusMessage = "¼ÆËã³É¹¦";
+            output.statusMessage = "è®¡ç®—æˆåŠŸ";
         }
         catch (const std::exception& e) {
-            output.statusMessage = std::string("¼ÆËãÒì³£: ") + e.what();
+            output.statusMessage = std::string("è®¡ç®—å¼‚å¸¸: ") + e.what();
         }
 
         return output;
     }
 
     // ----------------------------------------------------------------------------
-    // ±¨ÎÄ ID ·ÖÅäÊµÏÖ
+    // æŠ¥æ–‡ ID åˆ†é…å®ç°
     // ----------------------------------------------------------------------------
     namespace {
         static std::string ToBinary(uint32_t idValue, bool useExtendedId) {
@@ -176,11 +176,11 @@ namespace canopt1 {
 
         try {
             if (input.messages.empty()) {
-                output.statusMessage = "±¨ÎÄÁĞ±íÎª¿Õ";
+                output.statusMessage = "æŠ¥æ–‡åˆ—è¡¨ä¸ºç©º";
                 return output;
             }
 
-            // °´ÓÅÏÈ¼¶£¨ÓÅÏÈ¼¶ÊıÖµÔ½Ğ¡ÓÅÏÈ£©ÅÅĞò
+            // æŒ‰ä¼˜å…ˆçº§ï¼ˆä¼˜å…ˆçº§æ•°å€¼è¶Šå°ä¼˜å…ˆï¼‰æ’åº
             std::vector<std::pair<std::string, uint32_t>> sorted = input.messages;
             std::sort(sorted.begin(), sorted.end(),
                 [](const auto& a, const auto& b) { return a.second < b.second; });
@@ -194,22 +194,22 @@ namespace canopt1 {
                 const uint32_t priority = pr.second;
 
                 if (name.empty()) {
-                    output.warnings.push_back("·¢ÏÖ¿ÕÃû³Æ±¨ÎÄ£¬ÒÑÌø¹ı");
+                    output.warnings.push_back("å‘ç°ç©ºåç§°æŠ¥æ–‡ï¼Œå·²è·³è¿‡");
                     continue;
                 }
                 if (output.allocatedIds.find(name) != output.allocatedIds.end()) {
-                    output.warnings.push_back("±¨ÎÄ " + name + " ÒÑ·ÖÅä¹ı ID£¬Ìø¹ı");
+                    output.warnings.push_back("æŠ¥æ–‡ " + name + " å·²åˆ†é…è¿‡ IDï¼Œè·³è¿‡");
                     continue;
                 }
 
                 uint32_t candidate = ClampId(priority, input.useExtendedId);
 
-                // Èô candidate ±»Õ¼ÓÃÔòµİÔö²éÕÒ¿ÕÎ»£¨µ½×î´ó ID ºóÍ£Ö¹£©
+                // è‹¥ candidate è¢«å ç”¨åˆ™é€’å¢æŸ¥æ‰¾ç©ºä½ï¼ˆåˆ°æœ€å¤§ ID ååœæ­¢ï¼‰
                 uint32_t maxId = GetMaxId(input.useExtendedId);
                 while (usedIds.count(candidate) != 0) {
                     if (candidate == maxId) {
-                        // ÈôÒÑÂúÔòÎŞ·¨·ÖÅä
-                        output.errors.push_back("±¨ÎÄ " + name + " ÎŞ·¨·ÖÅä ID£¬ID ¿Õ¼ä¿ÉÄÜÒÑÂú");
+                        // è‹¥å·²æ»¡åˆ™æ— æ³•åˆ†é…
+                        output.errors.push_back("æŠ¥æ–‡ " + name + " æ— æ³•åˆ†é… IDï¼ŒID ç©ºé—´å¯èƒ½å·²æ»¡");
                         break;
                     }
                     candidate = ClampId(candidate + 1u, input.useExtendedId);
@@ -230,15 +230,15 @@ namespace canopt1 {
                 output.maxId = maxAssigned;
                 output.allocationSuccess = true;
                 std::ostringstream os;
-                os << "³É¹¦·ÖÅä " << output.totalMessages << " ¸ö ID";
+                os << "æˆåŠŸåˆ†é… " << output.totalMessages << " ä¸ª ID";
                 output.statusMessage = os.str();
             }
             else {
-                output.statusMessage = "Î´·ÖÅäÈÎºÎ ID";
+                output.statusMessage = "æœªåˆ†é…ä»»ä½• ID";
             }
         }
         catch (const std::exception& e) {
-            output.statusMessage = std::string("·ÖÅäÒì³£: ") + e.what();
+            output.statusMessage = std::string("åˆ†é…å¼‚å¸¸: ") + e.what();
             output.errors.push_back(e.what());
         }
 
@@ -246,30 +246,30 @@ namespace canopt1 {
     }
 
     // ----------------------------------------------------------------------------
-    // ±¨ÎÄÂË²¨Æ÷Éè¼ÆÊµÏÖ
+    // æŠ¥æ–‡æ»¤æ³¢å™¨è®¾è®¡å®ç°
     // ----------------------------------------------------------------------------
     namespace {
         static uint32_t MaxId(bool useExtendedId) {
             return useExtendedId ? 0x1FFFFFFFu : 0x7FFu;
         }
 
-        // Îª¸ø¶¨·¶Î§¼ÆËãÑÚÂë£¨³¢ÊÔÓÃ×îĞ¡Î»ÑÚ¸Ç·¶Î§£©
+        // ä¸ºç»™å®šèŒƒå›´è®¡ç®—æ©ç ï¼ˆå°è¯•ç”¨æœ€å°ä½æ©ç›–èŒƒå›´ï¼‰
         static uint32_t MaskForRange(uint32_t minId, uint32_t maxId, bool useExtendedId) {
             if (minId > maxId) std::swap(minId, maxId);
             uint32_t range = maxId - minId;
-            // ¼ÆËãĞèÒªÕÚ±ÎµÄµÍÎ»Êı
+            // è®¡ç®—éœ€è¦é®è”½çš„ä½ä½æ•°
             uint32_t maskBits = 0;
             while ((maskBits < 31u) && ((1u << maskBits) <= range)) {
                 ++maskBits;
             }
             const uint32_t baseMask = MaxId(useExtendedId);
             if (maskBits == 0) return baseMask;
-            // ¸ßÎ»±£³Ö£¬µÍ maskBits Î»Îª 0
+            // é«˜ä½ä¿æŒï¼Œä½ maskBits ä½ä¸º 0
             uint32_t mask = baseMask & (~((1u << maskBits) - 1u));
             return mask;
         }
 
-        // ¸ù¾İÒ»×é ID ¼ÆËã¹²Í¬Î»ÑÚÂëÓë¹ıÂË ID
+        // æ ¹æ®ä¸€ç»„ ID è®¡ç®—å…±åŒä½æ©ç ä¸è¿‡æ»¤ ID
         static std::pair<uint32_t, uint32_t> MaskForPattern(const std::vector<uint32_t>& ids, bool useExtendedId) {
             if (ids.empty()) return { 0, 0 };
             uint32_t common = ids.front();
@@ -290,8 +290,8 @@ namespace canopt1 {
 
         try {
             if (input.acceptedIds.empty()) {
-                output.statusMessage = "ID ÁĞ±í²»ÄÜÎª¿Õ";
-                output.errors.push_back("½ÓÊÜµÄ ID ÁĞ±íÎª¿Õ");
+                output.statusMessage = "ID åˆ—è¡¨ä¸èƒ½ä¸ºç©º";
+                output.errors.push_back("æ¥å—çš„ ID åˆ—è¡¨ä¸ºç©º");
                 return output;
             }
 
@@ -302,18 +302,18 @@ namespace canopt1 {
                 for (uint32_t id : input.acceptedIds) {
                     if (id > maxId) {
                         std::ostringstream os;
-                        os << "ID 0x" << std::hex << id << std::dec << " ³¬³ö·¶Î§£¬ÒÑÌø¹ı";
+                        os << "ID 0x" << std::hex << id << std::dec << " è¶…å‡ºèŒƒå›´ï¼Œå·²è·³è¿‡";
                         output.warnings.push_back(os.str());
                         continue;
                     }
                     FilterEntry ent;
                     ent.filterId = id;
-                    ent.mask = maxId; // È«Æ¥Åä
+                    ent.mask = maxId; // å…¨åŒ¹é…
                     ent.entryMode = "exact";
                     ent.acceptedIds = { id };
                     output.entries.push_back(ent);
                 }
-                output.note = "ÁĞ±íÄ£Ê½£ºÖğ¸ö¾«È·Æ¥Åä ID";
+                output.note = "åˆ—è¡¨æ¨¡å¼ï¼šé€ä¸ªç²¾ç¡®åŒ¹é… ID";
                 break;
             }
 
@@ -330,7 +330,7 @@ namespace canopt1 {
                 ent.maxId = maxIdVal;
                 ent.acceptedIds = input.acceptedIds;
                 output.entries.push_back(ent);
-                output.note = "·¶Î§Ä£Ê½£º½ÓÊÜ¸ø¶¨·¶Î§ÄÚËùÓĞ ID";
+                output.note = "èŒƒå›´æ¨¡å¼ï¼šæ¥å—ç»™å®šèŒƒå›´å†…æ‰€æœ‰ ID";
                 break;
             }
 
@@ -342,7 +342,7 @@ namespace canopt1 {
                 ent.entryMode = "mask";
                 ent.acceptedIds = input.acceptedIds;
                 output.entries.push_back(ent);
-                output.note = "ÑÚÂëÄ£Ê½£º»ùÓÚ¹²Í¬Î»Ä£Ê½Æ¥Åä";
+                output.note = "æ©ç æ¨¡å¼ï¼šåŸºäºå…±åŒä½æ¨¡å¼åŒ¹é…";
                 break;
             }
             } // switch
@@ -350,10 +350,10 @@ namespace canopt1 {
             output.filterCount = static_cast<uint32_t>(output.entries.size());
             output.totalAcceptedIds = static_cast<uint32_t>(input.acceptedIds.size());
             output.designSuccess = !output.entries.empty();
-            output.statusMessage = output.designSuccess ? "Éè¼Æ³É¹¦" : "Éè¼ÆÊ§°Ü";
+            output.statusMessage = output.designSuccess ? "è®¾è®¡æˆåŠŸ" : "è®¾è®¡å¤±è´¥";
         }
         catch (const std::exception& e) {
-            output.statusMessage = std::string("Éè¼ÆÒì³£: ") + e.what();
+            output.statusMessage = std::string("è®¾è®¡å¼‚å¸¸: ") + e.what();
             output.errors.push_back(e.what());
         }
 
@@ -361,7 +361,7 @@ namespace canopt1 {
     }
 
     // ----------------------------------------------------------------------------
-    // ¸¨ÖúÑéÖ¤º¯Êı£¨¼òµ¥·â×°£©
+    // è¾…åŠ©éªŒè¯å‡½æ•°ï¼ˆç®€å•å°è£…ï¼‰
     // ----------------------------------------------------------------------------
     bool ValidateSlopeControl(const SlopeControlOutput& output) {
         return output.calculationSuccess && output.isSuitable;
@@ -376,38 +376,38 @@ namespace canopt1 {
     }
 
     // ----------------------------------------------------------------------------
-    // ±¨¸æÉú³Éº¯Êı£¨¹© GUI Ö±½ÓÏÔÊ¾¶àĞĞÎÄ±¾£©
+    // æŠ¥å‘Šç”Ÿæˆå‡½æ•°ï¼ˆä¾› GUI ç›´æ¥æ˜¾ç¤ºå¤šè¡Œæ–‡æœ¬ï¼‰
     // ----------------------------------------------------------------------------
     std::string GenerateSlopeControlReport(const SlopeControlOutput& output) {
         std::ostringstream oss;
-        oss << "Ğ±ÂÊ¿ØÖÆµç×èÍÆ¼ö±¨¸æ\n";
+        oss << "æ–œç‡æ§åˆ¶ç”µé˜»æ¨èæŠ¥å‘Š\n";
         oss << "=====================\n";
-        oss << "ÍÆ¼öµç×è: " << output.recommendedResistorOhm << " ¦¸\n";
-        oss << "Êµ¼ÊÉÏÉıÊ±¼ä: " << output.actualRiseTimeNs << " ns\n";
-        oss << "Ä¿±êÉÏÉıÊ±¼ä(ÒÑÏŞ): " << output.targetRiseTimeNs << " ns\n";
-        oss << "Î»Ê±¼ä: " << output.bitTimeNs << " ns\n";
-        oss << "ÉÏÉıÊ±¼äÕ¼±È: " << output.riseTimeRatioPct << " %\n";
-        oss << "ÊÇ·ñÂú×ãÊ±Ğò: " << (output.isSuitable ? "ÊÇ" : "·ñ") << "\n";
-        oss << "ÍÆ¼öÄ£Ê½: " << output.recommendedMode << "\n";
-        oss << "Ä£Ê½µç×è: " << output.modeResistorOhm << " ¦¸\n";
-        oss << "Ä£Ê½ËµÃ÷: " << output.modeReasoning << "\n";
+        oss << "æ¨èç”µé˜»: " << output.recommendedResistorOhm << " Î©\n";
+        oss << "å®é™…ä¸Šå‡æ—¶é—´: " << output.actualRiseTimeNs << " ns\n";
+        oss << "ç›®æ ‡ä¸Šå‡æ—¶é—´(å·²é™): " << output.targetRiseTimeNs << " ns\n";
+        oss << "ä½æ—¶é—´: " << output.bitTimeNs << " ns\n";
+        oss << "ä¸Šå‡æ—¶é—´å æ¯”: " << output.riseTimeRatioPct << " %\n";
+        oss << "æ˜¯å¦æ»¡è¶³æ—¶åº: " << (output.isSuitable ? "æ˜¯" : "å¦") << "\n";
+        oss << "æ¨èæ¨¡å¼: " << output.recommendedMode << "\n";
+        oss << "æ¨¡å¼ç”µé˜»: " << output.modeResistorOhm << " Î©\n";
+        oss << "æ¨¡å¼è¯´æ˜: " << output.modeReasoning << "\n";
         if (!output.warnings.empty()) {
-            oss << "¾¯¸æ:\n";
+            oss << "è­¦å‘Š:\n";
             for (const auto& w : output.warnings) oss << "  - " << w << "\n";
         }
-        oss << "×´Ì¬: " << output.statusMessage << "\n";
+        oss << "çŠ¶æ€: " << output.statusMessage << "\n";
         return oss.str();
     }
 
     std::string GenerateIdAllocationReport(const MessageIdAllocationOutput& output) {
         std::ostringstream oss;
-        oss << "±¨ÎÄ ID ·ÖÅä±¨¸æ\n";
+        oss << "æŠ¥æ–‡ ID åˆ†é…æŠ¥å‘Š\n";
         oss << "=================\n";
-        oss << "×Ü±¨ÎÄÊı: " << output.totalMessages << "\n";
+        oss << "æ€»æŠ¥æ–‡æ•°: " << output.totalMessages << "\n";
         if (output.totalMessages > 0) {
-            oss << "ID ·¶Î§: 0x" << std::hex << output.minId << " - 0x" << output.maxId << std::dec << "\n";
+            oss << "ID èŒƒå›´: 0x" << std::hex << output.minId << " - 0x" << output.maxId << std::dec << "\n";
         }
-        oss << "·ÖÅäÏêÇé:\n";
+        oss << "åˆ†é…è¯¦æƒ…:\n";
         for (const auto& kv : output.allocatedIds) {
             oss << "  " << kv.first << ": 0x" << std::hex << kv.second << std::dec;
             auto it = output.idBinary.find(kv.first);
@@ -417,96 +417,96 @@ namespace canopt1 {
             oss << "\n";
         }
         if (!output.errors.empty()) {
-            oss << "´íÎó:\n";
+            oss << "é”™è¯¯:\n";
             for (const auto& e : output.errors) oss << "  - " << e << "\n";
         }
         if (!output.warnings.empty()) {
-            oss << "¾¯¸æ:\n";
+            oss << "è­¦å‘Š:\n";
             for (const auto& w : output.warnings) oss << "  - " << w << "\n";
         }
-        oss << "×´Ì¬: " << output.statusMessage << "\n";
+        oss << "çŠ¶æ€: " << output.statusMessage << "\n";
         return oss.str();
     }
 
     std::string GenerateFilterDesignReport(const FilterDesignOutput& output) {
         std::ostringstream oss;
-        oss << "±¨ÎÄÂË²¨Æ÷Éè¼Æ±¨¸æ\n";
+        oss << "æŠ¥æ–‡æ»¤æ³¢å™¨è®¾è®¡æŠ¥å‘Š\n";
         oss << "===================\n";
-        oss << "Ä£Ê½: ";
+        oss << "æ¨¡å¼: ";
         switch (output.mode) {
-        case FilterMode::kList: oss << "ÁĞ±íÄ£Ê½"; break;
-        case FilterMode::kRange: oss << "·¶Î§Ä£Ê½"; break;
-        case FilterMode::kMask: oss << "ÑÚÂëÄ£Ê½"; break;
+        case FilterMode::kList: oss << "åˆ—è¡¨æ¨¡å¼"; break;
+        case FilterMode::kRange: oss << "èŒƒå›´æ¨¡å¼"; break;
+        case FilterMode::kMask: oss << "æ©ç æ¨¡å¼"; break;
         }
         oss << "\n";
-        oss << "ÂË²¨Æ÷ÊıÁ¿: " << output.filterCount << "\n";
-        oss << "½ÓÊÜµÄ ID ×ÜÊı: " << output.totalAcceptedIds << "\n";
-        oss << "ËµÃ÷: " << output.note << "\n";
+        oss << "æ»¤æ³¢å™¨æ•°é‡: " << output.filterCount << "\n";
+        oss << "æ¥å—çš„ ID æ€»æ•°: " << output.totalAcceptedIds << "\n";
+        oss << "è¯´æ˜: " << output.note << "\n";
         for (size_t i = 0; i < output.entries.size(); ++i) {
             const auto& e = output.entries[i];
-            oss << "  ÂË²¨Æ÷ " << (i + 1) << ":\n";
+            oss << "  æ»¤æ³¢å™¨ " << (i + 1) << ":\n";
             oss << "    filterId: 0x" << std::hex << e.filterId << std::dec << "\n";
             oss << "    mask: 0x" << std::hex << e.mask << std::dec << "\n";
             oss << "    mode: " << e.entryMode << "\n";
             if (e.minId.has_value() && e.maxId.has_value()) {
-                oss << "    ·¶Î§: 0x" << std::hex << e.minId.value()
+                oss << "    èŒƒå›´: 0x" << std::hex << e.minId.value()
                     << " - 0x" << e.maxId.value() << std::dec << "\n";
             }
         }
         if (!output.errors.empty()) {
-            oss << "´íÎó:\n";
+            oss << "é”™è¯¯:\n";
             for (const auto& e : output.errors) oss << "  - " << e << "\n";
         }
         if (!output.warnings.empty()) {
-            oss << "¾¯¸æ:\n";
+            oss << "è­¦å‘Š:\n";
             for (const auto& w : output.warnings) oss << "  - " << w << "\n";
         }
-        oss << "×´Ì¬: " << output.statusMessage << "\n";
+        oss << "çŠ¶æ€: " << output.statusMessage << "\n";
         return oss.str();
     }
 
     // ----------------------------------------------------------------------------
-    // Í³Ò»Èë¿Ú£ºCalculateAll
+    // ç»Ÿä¸€å…¥å£ï¼šCalculateAll
     // ----------------------------------------------------------------------------
     Canopt1Output CalculateAll(const Canopt1Input& input) {
         Canopt1Output out;
-        out.success = true; // ¼ÙÉè³É¹¦£¬ÈôÄ³ÏîÊ§°Ü½«ÉèÖÃÎª false ²¢¼ÇÂ¼´íÎó
+        out.success = true; // å‡è®¾æˆåŠŸï¼Œè‹¥æŸé¡¹å¤±è´¥å°†è®¾ç½®ä¸º false å¹¶è®°å½•é”™è¯¯
 
-        // Ğ±ÂÊ¿ØÖÆ
+        // æ–œç‡æ§åˆ¶
         if (input.enableSlope) {
             out.slopeExecuted = true;
             out.slope = CalculateSlopeControl(input.slope);
-            // ÊÕ¼¯¾¯¸æ/´íÎó
+            // æ”¶é›†è­¦å‘Š/é”™è¯¯
             for (const auto& w : out.slope.warnings) out.warnings.push_back("slope: " + w);
             if (!out.slope.calculationSuccess) {
                 out.errors.push_back("slope: " + out.slope.statusMessage);
                 out.success = false;
             }
             else {
-                // Èô²»Âú×ãÊ±ĞòÒ²ÊÓÎª warning
+                // è‹¥ä¸æ»¡è¶³æ—¶åºä¹Ÿè§†ä¸º warning
                 if (!out.slope.isSuitable) {
                     std::ostringstream os;
-                    os << "slope: ÍÆ¼öµç×èµ¼ÖÂÉÏÉıÊ±¼ä " << out.slope.actualRiseTimeNs << " ns ³¬¹ıÔÊĞíÖµ";
+                    os << "slope: æ¨èç”µé˜»å¯¼è‡´ä¸Šå‡æ—¶é—´ " << out.slope.actualRiseTimeNs << " ns è¶…è¿‡å…è®¸å€¼";
                     out.warnings.push_back(os.str());
                 }
             }
         }
 
-        // ID ·ÖÅä
+        // ID åˆ†é…
         if (input.enableIdAllocation) {
             out.idAllocationExecuted = true;
             out.idAlloc = AllocateMessageIds(input.idAlloc);
             for (const auto& w : out.idAlloc.warnings) out.warnings.push_back("idAlloc: " + w);
             for (const auto& e : out.idAlloc.errors) out.errors.push_back("idAlloc: " + e);
             if (!out.idAlloc.allocationSuccess) {
-                // ½öµ± allocationSuccess Îª false ÇÒ´æÔÚ´íÎóÊ±ÈÏÎªÊ§°Ü
+                // ä»…å½“ allocationSuccess ä¸º false ä¸”å­˜åœ¨é”™è¯¯æ—¶è®¤ä¸ºå¤±è´¥
                 if (!out.idAlloc.errors.empty()) {
                     out.success = false;
                 }
             }
         }
 
-        // ÂË²¨Æ÷Éè¼Æ
+        // æ»¤æ³¢å™¨è®¾è®¡
         if (input.enableFilter) {
             out.filterExecuted = true;
             out.filter = DesignMessageFilter(input.filter);
@@ -517,11 +517,11 @@ namespace canopt1 {
             }
         }
 
-        // »ã×Ü×´Ì¬ĞÅÏ¢
+        // æ±‡æ€»çŠ¶æ€ä¿¡æ¯
         std::ostringstream status;
         status << "CalculateAll: ";
-        if (out.success) status << "È«²¿Ö´ĞĞ³É¹¦";
-        else status << "´æÔÚ´íÎó»ò¾¯¸æ£¬Çë¼ì²é out.errors / out.warnings";
+        if (out.success) status << "å…¨éƒ¨æ‰§è¡ŒæˆåŠŸ";
+        else status << "å­˜åœ¨é”™è¯¯æˆ–è­¦å‘Šï¼Œè¯·æ£€æŸ¥ out.errors / out.warnings";
         out.statusMessage = status.str();
 
         return out;
