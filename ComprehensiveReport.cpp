@@ -52,3 +52,4 @@ void ComprehensiveReport::CollectAllData() {
 }
 
 } // namespace canproject
+

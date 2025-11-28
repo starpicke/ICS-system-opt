@@ -13,8 +13,12 @@
 #include "CanIdFilterLib.h"
 #include "NetworkView.h"
 #include <QVBoxLayout>
+#include "ConfigManager.h"
+#include "ConfigData.h"
 
-    QT_BEGIN_NAMESPACE
+
+
+QT_BEGIN_NAMESPACE
 namespace Ui {
 class MainWindow;
 }
@@ -33,9 +37,9 @@ public:
     bool isBaudRateCalculated() const { return m_baudRateCalculated; }
 
 private slots:
-    void on_pushButton_clicked();
     void onBaudDataAdded(const BaudRate &data);
-
+    void onImportConfigClicked();  // 添加这行
+    void onExportConfigClicked();  // 添加这行
     void on_DeleteButton_clicked();
     void on_tableView_doubleClicked(const QModelIndex &index);
 
@@ -52,21 +56,21 @@ private slots:
     // 添加节点相关
     void onNodeDataAdded(const NodeInfo &nodeData);
     void on_AddNodebutton_clicked();
+    //
+    void on_DeleteNodeButton_clicked();
     void onNodeDoubleClicked(const QModelIndex &index);
     void editNode(int row);
     void refreshNodeTable();
 
     void on_calnetworkbutton_clicked();
 
-    void on_slopeCalculateButton_clicked();
+    void slopeCalculateButton_clicked();
 
     void onMultipleNodesAdded(const QVector<NodeInfo> &nodesData);
 
     // CAN ID分配与滤波器设计相关槽函数
-    void on_allocateAndDesignButton_clicked();
+    void allocateAndDesignButton_clicked();
     void on_generateReportButton_clicked();
-
-    void on_pushButton_2_clicked();
 
     // 设置栏
     void onActionOpen();
@@ -74,8 +78,22 @@ private slots:
     void onActionExit();
     void onActionExport();
 
+    void on_pushButton_clicked();
+
+    void on_Next2Button_clicked();
+
 private:
-    // CAN ID分配相关的成员函数
+
+    // ... 现有成员变量
+    config::ConfigManager configManager;           // 添加这行
+    config::SystemConfig currentConfig;           // 添加这行
+
+    // 添加这三个方法
+    void UpdateConfigFromGUI();
+    config::SystemConfig CollectConfigFromGUI();
+    void ApplyConfigToGUI(const config::SystemConfig& config);
+
+private:
     void allocateMessageIds();
     void designMessageFilter();
     void updateIdAllocationTable();
@@ -92,6 +110,19 @@ private:
 
     NetworkView* networkView_;     // 用于显示网络
     QVBoxLayout* networkLayout_;   // 放置 NetworkView 的布局
+
+private:
+    double calculateTotalBitRate();
+    double calculateActualLoadPercent();
+    double calculateSamplingPoint();
+    double calculateMaxCableLength();
+    double calculateTimingError();
+    double calculatePropagationDelay();
+    double extractRiseTimeFromLabel(const QString& labelText);
+    double extractResistanceFromLabel(const QString& labelText);
+    QPixmap captureNetworkView();
+    QString saveNetworkScreenshot();
+    QString m_currentScreenshotPath; // 添加这个成员变量
 
 private:
     Ui::MainWindow *ui;

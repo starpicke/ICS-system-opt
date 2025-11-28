@@ -4,7 +4,7 @@
  *
  * 本模块实现两个核心功能：
  * 1. CAN ID分配 - 根据节点和信号信息自动分配CAN ID
- * 2. 滤波器设计 - 设计CAN接收滤波器配置（列表/范围/掩码模式）
+ * 2. 滤波器设计 - 设计CAN接收滤波器配置（列表/掩码模式）
  *
  * 设计特点：
  * - 避免与Qt项目中已有的NodeInfo和BaudRate结构体冲突
@@ -29,8 +29,8 @@ namespace canopt2 {
      * @brief CAN节点信息（避免与Qt中的NodeInfo冲突）
      */
     struct CanNodeInfo {
-        std::string nodeName;                      ///< 节点名称
-        std::vector<std::string> messageNames;     ///< 节点包含的消息名称列表
+      std::string nodeName;                      ///< 节点名称
+      std::vector<std::string> messageNames;     ///< 节点包含的消息名称列表
     };
 
     /**
@@ -40,7 +40,7 @@ namespace canopt2 {
     struct CanSignalInfo {
         std::string messageName;                   ///< 消息名称
         int priority;                              ///< 优先级（数值越小优先级越高）
-        bool useExtendedId;                        ///< 是否使用扩展ID
+       // bool useExtendedId;                        ///< 是否使用扩展ID
     };
 
     /**

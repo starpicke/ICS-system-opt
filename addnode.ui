@@ -125,7 +125,7 @@
    <item row="4" column="0">
     <widget class="QGroupBox" name="sendGroupBox">
      <property name="title">
-      <string>选择发送信号</string>
+      <string>选择接收信号</string>
      </property>
      <property name="checkable">
       <bool>false</bool>
@@ -143,7 +143,7 @@
    <item row="4" column="1">
     <widget class="QGroupBox" name="receiveGroupBox">
      <property name="title">
-      <string>选择接收信号</string>
+      <string>选择发送信号</string>
      </property>
      <property name="checkable">
       <bool>false</bool>

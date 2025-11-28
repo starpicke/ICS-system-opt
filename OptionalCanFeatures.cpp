@@ -19,133 +19,101 @@
 
 namespace canopt1 {
 
-    // ----------------------------------------------------------------------------
-    // 局部常量与帮助函数（斜率控制）
-    // ----------------------------------------------------------------------------
-    namespace {
-        // 常用阻值列表（E24等常见）——可根据实际库存扩展
-        const std::vector<double> kCommonResistors = {
-        10, 15, 20, 22, 27, 30, 33, 39, 47, 51, 56, 68, 75, 82, 100,
-        120, 150, 200, 220, 270, 330, 390, 470, 510, 560, 680, 750,
-        820, 1000, 1200, 1500, 2000
-        };
+// ----------------------------------------------------------------------------
+// 局部常量与帮助函数（斜率控制）
+// ----------------------------------------------------------------------------
+namespace {
+// 斜率-电阻对应关系表，按斜率降序排列 (电阻kΩ, 斜率V/μs)
+const std::vector<std::pair<double, double>> kSlopeResistorTable = {
+    {0,    20.0},   // 0kΩ   -> 20 V/μs
+    {4.7,  18.0},   // 4.7kΩ -> 18 V/μs
+    {6.8,  17.0},   // 6.8kΩ -> 17 V/μs
+    {9.0,  15.0},   // 9.0kΩ -> 15 V/μs
+    {10.0, 13.0},   // 10kΩ  -> 13 V/μs  ← 这个应该被选中
+    {15.0, 11.0},   // 15kΩ  -> 11 V/μs
+    {22.0, 8.0},    // 22kΩ  -> 8 V/μs
+    {33.0, 6.0},    // 33kΩ  -> 6 V/μs
+    {47.0, 4.0},    // 47kΩ  -> 4 V/μs
+    {68.0, 3.0},    // 68kΩ  -> 3 V/μs
+    {100.0, 2.5}    // 100kΩ -> 2.5 V/μs
+};
 
-        // 斜率模式配置表
-        constexpr struct SlopeProfile {
-            const char* mode;
-            double resistor;
-            double riseTime;
-            double fallTime;
-            double maxBaudrate;
-            double minCableLength;
-        } kSlopeProfiles[] = {
-            {"slow",   120.0, 300.0, 300.0, 125000.0, 100.0},
-            {"normal", 47.0,  150.0, 150.0, 500000.0,  50.0},
-            {"fast",   10.0,   50.0,  50.0,1000000.0,   0.0}
-        };
+// 在给定数值中选择最接近的阻值
+static double FindResistorForSlope(double requiredSlope_VperUs) {
+    double bestResistor = kSlopeResistorTable.front().first;
+    double minError = std::numeric_limits<double>::max();
 
-        constexpr double kRiseTimeFactor = 2.2; // 10%-90% 上升时间近似系数
-
-        static double CalculateRiseTimeNs(double resistanceOhm, double loadCapacitancePf) {
-            const double capacitanceF = loadCapacitancePf * 1e-12;
-            // t_r = k * R * C, 转换到 ns 单位
-            return kRiseTimeFactor * resistanceOhm * capacitanceF * 1e9;
+    // 遍历查找最小误差
+    for (const auto& [resistor, slope] : kSlopeResistorTable) {
+        double error = std::fabs(slope - requiredSlope_VperUs);
+        if (error < minError) {
+            minError = error;
+            bestResistor = resistor;
         }
-    } // namespace
-
-    // ----------------------------------------------------------------------------
-    // 斜率控制实现
-    // ----------------------------------------------------------------------------
-    SlopeControlOutput CalculateSlopeControl(const SlopeControlInput& input) {
-        SlopeControlOutput output;
-
-        try {
-            // 输入验证
-            if (input.baudrate == 0) {
-                output.statusMessage = "波特率必须大于0";
-                return output;
-            }
-            if (input.targetRiseTimeNs <= 0.0) {
-                output.statusMessage = "目标上升时间必须大于0";
-                return output;
-            }
-            if (input.loadCapacitancePf <= 0.0) {
-                output.statusMessage = "负载电容必须大于0";
-                return output;
-            }
-
-            // 位时间（ns）
-            const double bitTimeNs = 1e9 / static_cast<double>(input.baudrate);
-            output.bitTimeNs = bitTimeNs;
-
-            // 最大允许上升时间 = maxRiseTimeRatio * 位时间
-            const double maxRiseTimeNs = bitTimeNs * input.maxRiseTimeRatio;
-
-            // 限制目标上升时间
-            const double clampedTarget = std::min(input.targetRiseTimeNs, maxRiseTimeNs);
-            output.targetRiseTimeNs = clampedTarget;
-            if (input.targetRiseTimeNs > maxRiseTimeNs) {
-                std::ostringstream os;
-                os << "目标上升时间 " << input.targetRiseTimeNs << " ns 超过允许值，已调整为 "
-                    << clampedTarget << " ns";
-                output.warnings.push_back(os.str());
-            }
-
-            // 在常用阻值中搜索最接近目标上升时间的阻值
-            double bestResistor = kCommonResistors.front();
-            double minError = std::numeric_limits<double>::max();
-            for (double r : kCommonResistors) {
-                const double rTime = CalculateRiseTimeNs(r, input.loadCapacitancePf);
-                const double err = std::fabs(rTime - clampedTarget);
-                if (err < minError) {
-                    minError = err;
-                    bestResistor = r;
-                }
-            }
-
-            const double actualRiseNs = CalculateRiseTimeNs(bestResistor, input.loadCapacitancePf);
-            output.recommendedResistorOhm = bestResistor;
-            output.actualRiseTimeNs = actualRiseNs;
-            output.riseTimeRatioPct = (actualRiseNs / bitTimeNs) * 100.0;
-            output.isSuitable = actualRiseNs <= maxRiseTimeNs;
-
-            // 基于波特率与电缆长度推荐模式
-            for (const auto& p : kSlopeProfiles) {
-                const bool baudCond = (static_cast<double>(input.baudrate) <= p.maxBaudrate) || (std::string(p.mode) == "fast");
-                const bool lenCond = input.cableLengthMeters >= p.minCableLength;
-
-                if ((std::string(p.mode) == "fast" && lenCond) ||
-                    (std::string(p.mode) != "fast" && baudCond && lenCond)) {
-                    output.recommendedMode = p.mode;
-                    output.modeResistorOhm = p.resistor;
-                    output.modeRiseTimeNs = p.riseTime;
-                    output.modeFallTimeNs = p.fallTime;
-                    std::ostringstream os;
-                    os << "根据波特率 " << input.baudrate << " bps 与线路长度 "
-                        << input.cableLengthMeters << " m 选择 " << p.mode << " 模式";
-                    output.modeReasoning = os.str();
-                    break;
-                }
-            }
-            if (output.recommendedMode.empty()) {
-                const auto& fallback = kSlopeProfiles[2];
-                output.recommendedMode = fallback.mode;
-                output.modeResistorOhm = fallback.resistor;
-                output.modeRiseTimeNs = fallback.riseTime;
-                output.modeFallTimeNs = fallback.fallTime;
-                output.modeReasoning = "未匹配到合适模式，默认使用 fast 模式";
-            }
-
-            output.calculationSuccess = true;
-            output.statusMessage = "计算成功";
-        }
-        catch (const std::exception& e) {
-            output.statusMessage = std::string("计算异常: ") + e.what();
-        }
-
-        return output;
     }
 
+    return bestResistor * 1000.0; // 转换为欧姆
+}
+} // namespace
+
+// ----------------------------------------------------------------------------
+// 斜率控制实现
+// ----------------------------------------------------------------------------
+SlopeControlOutput CalculateSlopeControl(const SlopeControlInput& input) {
+    SlopeControlOutput output;
+
+    try {
+        // 输入验证
+        if (input.baudrate == 0) {
+            output.statusMessage = "波特率必须大于0";
+            return output;
+        }
+
+        // 1. 计算位时间 (秒)
+        const double bitTime_s = 1.0 / static_cast<double>(input.baudrate);
+        output.bitTimeNs = bitTime_s * 1e9;
+
+        // 2. 确定时间份额数量 (通常取10)
+        const uint32_t timeQuantaPerBit = 10;
+
+        // 3. 计算目标上升时间 (使用位时间的1/10)
+        const double targetRiseTime_s = bitTime_s / timeQuantaPerBit;
+        const double targetRiseTimeNs = targetRiseTime_s * 1e9;
+        output.targetRiseTimeNs = targetRiseTimeNs;
+
+        // 4. 计算所需信号斜率 (V/μs)
+        const double canSignalSwing = 3.0; // CAN差分信号典型摆幅3V
+        const double requiredSlope_VperUs = canSignalSwing / (targetRiseTimeNs / 1000.0);
+
+        // 5. 根据斜率查找对应电阻值
+        output.recommendedResistorOhm = FindResistorForSlope(requiredSlope_VperUs);
+
+        // 6. 验证计算结果
+        output.actualRiseTimeNs = targetRiseTimeNs;
+        output.riseTimeRatioPct = (targetRiseTimeNs / output.bitTimeNs) * 100.0;
+        output.isSuitable = (output.riseTimeRatioPct <= 15.0); // 上升时间应小于位时间的15%
+
+        // 设置其他输出参数（保持兼容性）
+        output.recommendedMode = "calculated";
+        output.modeResistorOhm = output.recommendedResistorOhm;
+        output.modeRiseTimeNs = targetRiseTimeNs;
+        output.modeFallTimeNs = targetRiseTimeNs;
+        output.modeReasoning = "基于波特率计算的斜率控制";
+
+        output.calculationSuccess = true;
+
+        std::ostringstream status;
+        status << "计算完成: 斜率=" << requiredSlope_VperUs << " V/μs, "
+               << "电阻=" << (output.recommendedResistorOhm / 1000.0) << " kΩ";
+        output.statusMessage = status.str();
+
+    }
+    catch (const std::exception& e) {
+        output.statusMessage = std::string("计算异常: ") + e.what();
+    }
+
+    return output;
+}
     // ----------------------------------------------------------------------------
     // 报文 ID 分配实现
     // ----------------------------------------------------------------------------

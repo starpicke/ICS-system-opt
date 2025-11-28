@@ -1,10 +1,10 @@
 <RCC>
     <qresource prefix="/new/icons">
         <file>resources/icon/save-fill.png</file>
-        <file>resources/icon/导出.png</file>
-        <file>resources/icon/导入.png</file>
-        <file>resources/icon/退出.png</file>
-        <file>resources/icon/新建.png</file>
+        <file>resources/icon/export.png</file>
+        <file>resources/icon/load.png</file>
+        <file>resources/icon/quit.png</file>
+        <file>resources/icon/new.png</file>
     </qresource>
     <qresource prefix="/style">
         <file>style.qss</file>

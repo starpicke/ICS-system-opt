@@ -1,16 +1,12 @@
-/**
- * @file CanIdFilterLib.cpp
- * @brief CAN ID分配和滤波器设计模块 - 实现文件
- */
-
 #include "CanIdFilterLib.h"
+#include "qglobal.h"
 #include <algorithm>
 #include <sstream>
 #include <set>
 #include <map>
 #include <stdexcept>
+#include <QDebug>
 
-// 防止windows.h中的max/min宏定义冲突
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -23,15 +19,7 @@ uint32_t GetMaxCanId(bool useExtendedId) {
     return useExtendedId ? 0x1FFFFFFF : 0x7FF;
 }
 
-// 判断ID列表是否连续 - 使用结构体返回值
-struct RangeCheckResult {
-    bool isContinuous;
-    uint32_t minIdValue;
-    uint32_t maxIdValue;
-};
-
-
-// 新增辅助函数：计算最优掩码
+// 计算最优掩码
 std::pair<uint32_t, uint32_t> CalculateOptimalMask(const std::vector<uint32_t>& ids, bool useExtendedId) {
     if (ids.empty()) {
         return std::make_pair(0u, 0u);
@@ -46,15 +34,15 @@ std::pair<uint32_t, uint32_t> CalculateOptimalMask(const std::vector<uint32_t>& 
 
     // 找出所有ID的共同位
     uint32_t commonBits = ~0u;
+    uint32_t varyingBits = 0;
+
     for (uint32_t id : ids) {
         commonBits &= id;
+        varyingBits |= id;
     }
 
-    // 找出变化位
-    uint32_t varyingBits = 0;
-    for (uint32_t id : ids) {
-        varyingBits |= (id ^ commonBits);
-    }
+    // 变化位 = 所有出现过的1位 异或 共同位
+    varyingBits ^= commonBits;
 
     // 计算掩码：变化位设为0（不关心），其他位设为1（必须匹配）
     uint32_t mask = ~varyingBits;
@@ -68,8 +56,10 @@ std::pair<uint32_t, uint32_t> CalculateOptimalMask(const std::vector<uint32_t>& 
     return std::make_pair(mask, filterId);
 }
 
-// 新增辅助函数：验证掩码有效性
-bool IsMaskEffective(const std::vector<uint32_t>& targetIds, uint32_t filterId, uint32_t mask) {
+// 掩码有效性验证
+bool IsMaskEffective(const std::vector<uint32_t>& targetIds, uint32_t filterId, uint32_t mask, bool useExtendedId) {
+    const uint32_t maxIdValue = GetMaxCanId(useExtendedId);  // 现在使用了这个变量
+
     // 验证1：所有目标ID都能通过掩码
     for (uint32_t id : targetIds) {
         if ((id & mask) != filterId) {
@@ -77,126 +67,99 @@ bool IsMaskEffective(const std::vector<uint32_t>& targetIds, uint32_t filterId, 
         }
     }
 
-    // 验证2：计算误判率（被错误接收的ID数量）
-    // 简单验证：如果掩码太宽（比如少于4位被屏蔽），可能误判率太高
-    uint32_t maskedBits = ~mask;
-    int maskedBitCount = 0;
-    while (maskedBits) {
-        maskedBitCount += (maskedBits & 1);
-        maskedBits >>= 1;
+    // 验证2：计算可能误判的ID数量（简化版）
+    // 计算掩码中0位的数量（不关心的位数）
+    uint32_t careBits = mask;
+    int dontCareBitCount = 0;
+    for (int i = 0; i < (useExtendedId ? 29 : 11); i++) {
+        if (!(careBits & 1)) {
+            dontCareBitCount++;
+        }
+        careBits >>= 1;
     }
 
-    // 如果掩码屏蔽的位数太少（小于4位），可能误判率太高，不推荐使用
-    if (maskedBitCount < 4) {
-        return false;
+    // 计算可能匹配的ID总数
+    uint32_t possibleMatches = 1u << dontCareBitCount;
+
+    // 如果可能匹配的ID数量不超过目标ID数量的4倍，认为是有效的
+    if (possibleMatches > targetIds.size() * 4) {
+        return false;  // 误判率可能太高
     }
 
     return true;
-}}
+}
+} // namespace
 std::vector<IdAllocationResult> AllocateCanIds(
     const std::vector<CanNodeInfo>& nodes,
-    const std::vector<CanSignalInfo>& signals,  // 修正1：参数名改为signals
+    const std::vector<CanSignalInfo>& canSignals,  // 修改参数名，避免与Qt宏冲突
     bool useExtendedId,
     uint32_t startId)
 {
     std::vector<IdAllocationResult> results;
 
-    // 参数验证
-    if (nodes.empty() || signals.empty()) {
-        return results;
-    }
-
     try {
-        // 按优先级排序信号（数值越小优先级越高）
-        std::vector<CanSignalInfo> sortedSignals = signals;
-        std::sort(sortedSignals.begin(), sortedSignals.end(),
-                  [](const CanSignalInfo& a, const CanSignalInfo& b) {
-                      return a.priority < b.priority;
-                  });
+        // 收集所有信号类型
+        std::set<std::string> signalTypes;
+        for (const auto& node : nodes) {
+            for (const auto& msgName : node.messageNames) {
+                signalTypes.insert(msgName);
+            }
+        }
 
-        uint32_t currentId = startId;
-        uint32_t maximumId = GetMaxCanId(useExtendedId);
+        // 为每种信号类型分配基础ID范围
+        std::map<std::string, uint32_t> signalBaseIds;
+        uint32_t baseId = startId;
+        const uint32_t ID_RANGE_SIZE = useExtendedId ? 0x1000 : 0x100; // 扩展ID范围更大
+
+        for (const auto& signalType : signalTypes) {
+            signalBaseIds[signalType] = baseId;
+            baseId += ID_RANGE_SIZE;
+        }
+
+        // 为每个节点的每个发送信号分配具体ID
+        std::map<std::string, uint32_t> nodeCounter;
         std::set<uint32_t> usedIds;
-        std::set<std::string> allocatedSignals;  // 新增：记录已分配的信号名称
+        const uint32_t maxIdValue = GetMaxCanId(useExtendedId);  // 添加这行
 
-        // 为每个信号分配ID
-        for (size_t i = 0; i < sortedSignals.size(); ++i) {
-            const CanSignalInfo& signal = sortedSignals[i];  // 修正2：变量名改为signal
+        for (const auto& node : nodes) {
+            for (const auto& signalType : node.messageNames) {
+                // 初始化计数器
+                if (nodeCounter.find(signalType) == nodeCounter.end()) {
+                    nodeCounter[signalType] = 0;
+                }
 
-            // 修正3：检查信号是否已经分配过
-           // if (allocatedSignals.find(signal.messageName) != allocatedSignals.end()) {
-           //     continue; // 如果已经分配过，跳过这个信号
-           // }
+                // 分配ID：基础ID + 节点序号
+                uint32_t signalId = signalBaseIds[signalType] + nodeCounter[signalType];
 
-            bool foundNode = false;
-
-            // 查找包含该信号的节点
-            for (size_t j = 0; j < nodes.size(); ++j) {
-                const CanNodeInfo& node = nodes[j];
-
-                if (std::find(node.messageNames.begin(), node.messageNames.end(),
-                              signal.messageName) != node.messageNames.end()) {
-
-                    foundNode = true;
-
-                    // 检查ID是否超出范围
-                    if (currentId > maximumId) {
-                        return results; // ID空间不足
-                    }
-
-                    // 检查ID是否已被使用
-                    while (usedIds.count(currentId) > 0) {
-                        currentId++;
-                        if (currentId > maximumId) {
-                            return results; // ID空间不足
+                // 确保ID唯一且不超出范围
+                while (usedIds.count(signalId) > 0 || signalId > maxIdValue) {  // 使用maxIdValue
+                    signalId++;
+                    if (signalId > maxIdValue) {
+                        // 如果超出范围，回退到简单递增分配
+                        signalId = startId;
+                        while (usedIds.count(signalId) > 0 && signalId <= maxIdValue) {
+                            signalId++;
+                        }
+                        if (signalId > maxIdValue) {
+                            throw std::runtime_error("CAN ID空间不足");
                         }
                     }
-
-                    // 分配ID
-                    IdAllocationResult result;
-                    result.nodeName = node.nodeName;
-                    result.messageName = signal.messageName;
-                    result.allocatedId = currentId;
-
-                    results.push_back(result);
-                    usedIds.insert(currentId);
-                    allocatedSignals.insert(signal.messageName);  // 记录已分配的信号
-                    currentId++;
-
-                    //break; // 一个信号只需要分配一次ID
-                }
-            }
-
-            // 修正4：如果信号没有被任何节点包含，也分配一个ID（可选）
-            if (!foundNode) {
-                // 检查ID是否超出范围
-                if (currentId > maximumId) {
-                    return results; // ID空间不足
                 }
 
-                // 检查ID是否已被使用
-                while (usedIds.count(currentId) > 0) {
-                    currentId++;
-                    if (currentId > maximumId) {
-                        return results; // ID空间不足
-                    }
-                }
+                usedIds.insert(signalId);
 
-                // 分配ID（没有对应节点）
+                // 创建分配结果
                 IdAllocationResult result;
-                result.nodeName = "未指定";
-                result.messageName = signal.messageName;
-                result.allocatedId = currentId;
+                result.nodeName = node.nodeName;
+                result.messageName = signalType;
+                result.allocatedId = signalId;
 
                 results.push_back(result);
-                usedIds.insert(currentId);
-                allocatedSignals.insert(signal.messageName);
-                currentId++;
+                nodeCounter[signalType]++;
             }
         }
     }
     catch (const std::exception& e) {
-        // 异常处理
         results.clear();
     }
 
@@ -219,11 +182,11 @@ FilterDesignResult DesignCanFilter(
             return result;
         }
 
-        const uint32_t maximumIdValue = GetMaxCanId(useExtendedId);
+        const uint32_t maxIdValue = GetMaxCanId(useExtendedId);
 
         // 验证所有ID都在有效范围内
         for (uint32_t id : ids) {
-            if (id > maximumIdValue) {
+            if (id > maxIdValue) {
                 result.mode = "error";
                 result.note = "ID超出有效范围: 0x" + std::to_string(id);
                 return result;
@@ -241,26 +204,65 @@ FilterDesignResult DesignCanFilter(
             result.mode = "mask";
             result.filterCount = 1;
             result.filterId = uniqueIds[0];
-            result.maskOrMaxId = maximumIdValue;  // 全掩码，精确匹配
+            result.maskOrMaxId = maxIdValue;
             result.note = "单个ID掩码模式（精确匹配）";
             return result;
         }
 
-        // 情况2：尝试掩码模式（优先）
-        std::pair<uint32_t, uint32_t> maskResult = CalculateOptimalMask(uniqueIds, useExtendedId);
-        uint32_t mask = maskResult.first;
-        uint32_t filterId = maskResult.second;
+        // 情况2：尝试掩码模式 - 优先使用掩码模式
+        bool maskFound = false;
+        uint32_t bestMask = 0;
+        uint32_t bestFilterId = 0;
+        // size_t bestCoverage = 0;  // 注释掉未使用的变量
 
-        if (mask != 0 && mask != maximumIdValue) {
-            // 验证掩码模式是否有效且高效（能覆盖所有目标ID且误判率低）
-            if (IsMaskEffective(uniqueIds, filterId, mask)) {
-                result.mode = "mask";
-                result.filterCount = 1;
-                result.filterId = filterId;
-                result.maskOrMaxId = mask;
-                result.note = "掩码模式，覆盖" + std::to_string(uniqueIds.size()) + "个ID";
-                return result;
+        const int totalBits = useExtendedId ? 29 : 11;
+
+        // 尝试不同的掩码位模式
+        for (int maskBits = totalBits - 1; maskBits >= 4; maskBits--) {
+            uint32_t mask = (0xFFFFFFFFu >> (32 - maskBits)) << (totalBits - maskBits);
+            mask &= maxIdValue;
+
+            // 对每个可能的滤波器ID检查覆盖情况
+            for (uint32_t testFilterId = 0; testFilterId <= maxIdValue; testFilterId += (1 << (totalBits - maskBits))) {
+                std::vector<uint32_t> coveredIds;
+
+                for (uint32_t id : uniqueIds) {
+                    if ((id & mask) == (testFilterId & mask)) {
+                        coveredIds.push_back(id);
+                    }
+                }
+
+                // 检查是否覆盖所有目标ID且没有过多误判
+                if (coveredIds.size() == uniqueIds.size()) {
+                    // 计算可能的误判数量
+                    int dontCareBits = totalBits - maskBits;
+                    uint32_t possibleMatches = 1u << dontCareBits;
+
+                    // 如果误判率可接受，使用这个掩码
+                    if (possibleMatches <= uniqueIds.size() * 8) { // 可调整的阈值
+                        maskFound = true;
+                        bestMask = mask;
+                        bestFilterId = testFilterId & mask;
+                        break;
+                    }
+                }
             }
+
+            if (maskFound) break;
+        }
+
+        // 如果找到有效的掩码配置
+        if (maskFound) {
+            result.mode = "mask";
+            result.filterCount = 1;
+            result.filterId = bestFilterId;
+            result.maskOrMaxId = bestMask;
+
+            std::stringstream note;
+            note << "掩码模式，覆盖" << uniqueIds.size() << "个ID";
+            note << " (掩码:0x" << std::hex << bestMask << ", ID:0x" << bestFilterId << ")";
+            result.note = note.str();
+            return result;
         }
 
         // 情况3：回退到列表模式
@@ -268,7 +270,11 @@ FilterDesignResult DesignCanFilter(
         result.filterCount = static_cast<uint32_t>(uniqueIds.size());
         result.filterId = uniqueIds[0];
         result.maskOrMaxId = uniqueIds.back();
-        result.note = "列表模式，使用" + std::to_string(uniqueIds.size()) + "个滤波器";
+
+        std::stringstream note;
+        note << "列表模式，使用" << uniqueIds.size() << "个滤波器";
+        note << " (ID:0x" << std::hex << uniqueIds[0] << "~0x" << uniqueIds.back() << ")";
+        result.note = note.str();
 
     }
     catch (const std::exception& e) {
@@ -277,23 +283,6 @@ FilterDesignResult DesignCanFilter(
     }
 
     return result;
-}
-
-std::string GenerateIdAllocationReport(const std::vector<IdAllocationResult>& results) {
-    std::ostringstream oss;
-
-    for (size_t i = 0; i < results.size(); ++i) {
-        const IdAllocationResult& result = results[i];
-        oss << "节点: " << result.nodeName
-            << ", 信号: " << result.messageName
-            << ", ID: 0x" << std::hex << result.allocatedId << std::dec;
-
-        if (i < results.size() - 1) {
-            oss << "\n";
-        }
-    }
-
-    return oss.str();
 }
 
 std::string GenerateFilterDesignReport(const FilterDesignResult& result) {
@@ -321,3 +310,4 @@ std::string GenerateFilterDesignReport(const FilterDesignResult& result) {
 }
 
 } // namespace canopt2
+

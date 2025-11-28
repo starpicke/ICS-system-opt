@@ -12,6 +12,9 @@
 #include "ComprehensiveReport.h"
 #include "NetworkView.h"
 #include "QVBoxLayout"
+#include <QRegularExpression>
+#include <QDir>
+#include <QApplication>
 
 
 MainWindow::MainWindow(QWidget *parent)
@@ -20,6 +23,7 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
+    setWindowTitle("CAN网络设计工具");
     // 初始化ListView模型
     m_tableModel = new QStandardItemModel(this);
     QStringList headers;
@@ -74,6 +78,17 @@ MainWindow::MainWindow(QWidget *parent)
     // 连接节点表格的双击信号
     connect(ui->NodetableView, &QTableView::doubleClicked, this, &MainWindow::onNodeDoubleClicked);
 
+    //
+    connect(ui->actionOpen, &QAction::triggered, this, &MainWindow::onImportConfigClicked);
+    //connect(ui->actionLoad, &QAction::triggered, this, &MainWindow::onExportConfigClicked);
+
+    // // 初始化配置
+    currentConfig = configManager.CreateDefaultConfig();
+
+    // 连接配置管理信号
+    connect(ui->actionOpen, &QAction::triggered, this, &MainWindow::onImportConfigClicked);
+    connect(ui->actionSave, &QAction::triggered, this, &MainWindow::onExportConfigClicked);
+
     // 初始化CAN ID分配表格模型
     m_idAllocationModel = new QStandardItemModel(this);
     QStringList idHeaders;
@@ -86,7 +101,7 @@ MainWindow::MainWindow(QWidget *parent)
     // 初始化滤波器设计表格模型
     m_filterDesignModel = new QStandardItemModel(this);
     QStringList filterHeaders;
-    filterHeaders << "模式" << "滤波器数量" << "滤波器ID" << "掩码/最大ID" << "说明";
+    filterHeaders << "节点名称" << "模式" << "滤波器数量" << "滤波器ID" << "掩码/最大ID" << "说明";  // 增加"节点名称"列
     m_filterDesignModel->setHorizontalHeaderLabels(filterHeaders);
     ui->filterDesignTableView->setModel(m_filterDesignModel);
     ui->filterDesignTableView->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -101,6 +116,17 @@ MainWindow::MainWindow(QWidget *parent)
     connect(ui->actionQuit, &QAction::triggered, this, &MainWindow::onActionExit);
     connect(ui->actionNew, &QAction::triggered, this, &MainWindow::onActionSave);
     connect(ui->actionExport, &QAction::triggered, this, &MainWindow::onActionExport);
+
+    // 1. 创建布局并设置到占位 Widget
+    networkLayout_ = new QVBoxLayout(ui->networkWidget);
+    networkLayout_->setContentsMargins(0, 0, 0, 0); // 可选，去掉边距
+    ui->networkWidget->setLayout(networkLayout_);
+
+    // 2. 创建 NetworkView
+    networkView_ = new NetworkView(this);
+
+    // 3. 添加到布局
+    networkLayout_->addWidget(networkView_);
 }
 
 MainWindow::~MainWindow()
@@ -441,6 +467,8 @@ void MainWindow::on_RunButton3_clicked()
     } else {
         ui->statuslabel->setText("❌错误: " + QString::fromStdString(result.statusMessage));
     }
+    slopeCalculateButton_clicked();
+    allocateAndDesignButton_clicked();
 }
 
 void MainWindow::on_AddNodebutton_clicked()
@@ -452,7 +480,30 @@ void MainWindow::on_AddNodebutton_clicked()
     connect(nodeDialog, &addNode::nodeDataAdded, this, &MainWindow::onNodeDataAdded);
     nodeDialog->show();
 }
+//
+void MainWindow::on_DeleteNodeButton_clicked()
+{
+    QModelIndex currentIndex = ui->NodetableView->currentIndex();
+    if (!currentIndex.isValid()) {
+        QMessageBox::warning(this, "警告", "请先选择一个节点！");
+        return;
+    }
 
+    int row = currentIndex.row();
+    QString nodeName = m_nodeList[row].nodeName;
+
+    QMessageBox::StandardButton reply;
+    reply = QMessageBox::question(this, "确认删除",
+                                  QString("确定要删除节点 '%1' 吗？").arg(nodeName),
+                                  QMessageBox::Yes | QMessageBox::No);
+
+    if (reply == QMessageBox::Yes) {
+        m_nodeList.removeAt(row);
+        refreshNodeTable();
+        QMessageBox::information(this, "成功", QString("节点 '%1' 已删除").arg(nodeName));
+    }
+}
+//
 void MainWindow::onMultipleNodesAdded(const QVector<NodeInfo> &nodesData)
 {
     m_nodeList.append(nodesData);
@@ -556,24 +607,30 @@ void MainWindow::editNode(int row)
 
     editDialog->show();  // 添加这行，显示对话框
 }
-void MainWindow::on_slopeCalculateButton_clicked()
+void MainWindow::slopeCalculateButton_clicked()
 {
-    if (!ui->slopeBaudRateSpinBox || !ui->slopeRiseTimeSpinBox ||
-        !ui->slopeCapacitanceSpinBox || !ui->slopeCableLengthSpinBox) {
-        QMessageBox::warning(this, "错误", "斜率控制UI组件未找到");
-        return;
-    }
+    int baudindex = ui->ChooseBaudcomboBox->currentIndex();
+    QString baudText = ui->ChooseBaudcomboBox->currentText().replace(" kbps","");
+    uint32_t baudrate=0;
 
-    uint32_t baudrate = static_cast<uint32_t>(ui->slopeBaudRateSpinBox->value() * 1000);
-    double targetRiseTime = ui->slopeRiseTimeSpinBox->value();
-    double capacitance = ui->slopeCapacitanceSpinBox->value();
-    double cableLength = ui->slopeCableLengthSpinBox->value();
+    switch (baudindex) {
+    case 0:
+        baudrate = ui->PBaudlineEdit->text().replace(" kbps", "").toDouble() * 1000;
+        break;
+    case 1:
+        baudrate = ui->RBaudlineEdit->text().replace(" kbps", "").toDouble() * 1000;
+        break;
+    default:
+        baudrate = baudText.toInt()*1000;
+        break;
+    }
+    qDebug() << baudrate;
+
+
+
 
     canopt1::SlopeControlInput input;
     input.baudrate = baudrate;
-    input.targetRiseTimeNs = targetRiseTime;
-    input.loadCapacitancePf = capacitance;
-    input.cableLengthMeters = cableLength;
     input.maxRiseTimeRatio = 0.1;
 
     auto result = canopt1::CalculateSlopeControl(input);
@@ -585,10 +642,6 @@ void MainWindow::on_slopeCalculateButton_clicked()
 
         if (ui->slopeActualRiseTimeLabel) {
             ui->slopeActualRiseTimeLabel->setText(QString::number(result.actualRiseTimeNs, 'f', 1) + " ns");
-        }
-
-        if (ui->slopeModeLabel) {
-            ui->slopeModeLabel->setText(QString::fromStdString(result.recommendedMode));
         }
 
         if (ui->slopeStatusLabel) {
@@ -620,6 +673,7 @@ void MainWindow::on_calnetworkbutton_clicked()
 {
     if (m_nodeList.isEmpty()) {
         qDebug() << "节点列表为空！";
+        QMessageBox::warning(this, "错误", "节点列表为空，无法生成网络！");
         return;
     }
 
@@ -637,7 +691,7 @@ void MainWindow::on_calnetworkbutton_clicked()
     IndustrialNet::NetworkDesigner designer;
     IndustrialNet::DesignResult result = designer.designNetwork(nodes);
 
-    // 3. 用 qDebug 输出报告
+    // 3. 用 qDebug 输出详细报告
     qDebug() << "=== 网络设计报告 ===";
     for (auto &seg : result.segments) {
         IndustrialNet::Node startNode = nodes[seg.node_ids.front()];
@@ -676,37 +730,17 @@ void MainWindow::on_calnetworkbutton_clicked()
     qDebug() << "总体网络状态:" << (result.overall_ok ? "OK" : "FAIL");
     for (auto &log : result.logs)
         qDebug() << log;
-}
 
-void MainWindow::on_pushButton_2_clicked()
-{
-    if (m_nodeList.isEmpty()) {
-        QMessageBox::warning(this, "错误", "节点列表为空，无法生成网络！");
-        return;
-    }
+    // 4. 调用设计报告打印（如果存在此方法）
+    // designer.printDesignReport(nodes, result);
 
-    // 1. 转换 QVector<NodeInfo> -> std::vector<IndustrialNet::Node>
-    std::vector<IndustrialNet::Node> nodes;
-    for (int i = 0; i < m_nodeList.size(); ++i) {
-        IndustrialNet::Node n;
-        n.id = i;  // 使用索引作为节点ID
-        n.x = m_nodeList[i].xCoordinate;
-        n.y = m_nodeList[i].yCoordinate;
-        nodes.push_back(n);
-    }
-
-    // 2. 调用 NetworkDesigner
-    IndustrialNet::NetworkDesigner designer;
-    IndustrialNet::DesignResult result = designer.designNetwork(nodes);
-    designer.printDesignReport(nodes, result);
-
-    // 3. 更新 NetworkView 显示
+    // 5. 更新 NetworkView 显示
     if (networkView_) {
         networkView_->setNetworkData(result, nodes); // 假设 NetworkView 有这个接口
         networkView_->update();
     }
 
-    // 4. 用 QMessageBox 或 qDebug 输出设计报告
+    // 6. 用 QMessageBox 输出简洁的设计报告
     QString report = "=== 网络设计报告 ===\n";
     for (auto &seg : result.segments) {
         IndustrialNet::Node startNode = nodes[seg.node_ids.front()];
@@ -724,10 +758,12 @@ void MainWindow::on_pushButton_2_clicked()
                       .arg(endNode.x).arg(endNode.y);
     }
 
-    report += QString("总体网络状态: %1").arg(result.overall_ok ? "OK" : "FAIL");
+    report += QString("\n总体网络状态: %1").arg(result.overall_ok ? "OK" : "FAIL");
 
     QMessageBox::information(this, "网络设计完成", report);
+    updateBridgeTable(result);
 }
+
 // 更新中继器表格显示
 void MainWindow::updateBridgeTable(const IndustrialNet::DesignResult& result)
 {
@@ -826,16 +862,357 @@ void MainWindow::updateBridgeTable(const IndustrialNet::DesignResult& result)
     ui->BridgetableWidget->resizeColumnsToContents();
 }
 
-// CAN ID分配与滤波器设计相关函数实现
+// 保存报告到文件
+void MainWindow::on_generateReportButton_clicked()
+{
+    if (m_idAllocationResults.empty()) {
+        QMessageBox::warning(this, "错误", "没有可用的配置结果！");
+        return;
+    }
+
+    try {
+        // 重新生成滤波器结果（为了包含在报告中）
+        auto filterResults = designFiltersForAllNodes();
+        std::string fullReport = generateCompleteReport(filterResults);
+
+       // ui->reportTextEdit->setPlainText(QString::fromStdString(fullReport));
+
+        QString fileName = QFileDialog::getSaveFileName(this, "保存报告", "can_network_config.txt", "文本文件 (*.txt)");
+        if (!fileName.isEmpty()) {
+            QFile file(fileName);
+            if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+                QTextStream stream(&file);
+                stream << QString::fromStdString(fullReport);
+                file.close();
+                QMessageBox::information(this, "成功", "报告已保存！");
+            }
+        }
+
+    } catch (const std::exception& e) {
+        QMessageBox::critical(this, "错误", QString("生成报告失败: %1").arg(e.what()));
+    }
+}
+
+// 新建主窗口操作
+void MainWindow::onActionOpen()
+{
+    // 创建新的主窗口实例
+    MainWindow *newMainWindow = new MainWindow();
+
+    // 设置窗口属性
+    newMainWindow->setWindowTitle("CAN网络设计工具");
+    newMainWindow->resize(this->width(), this->height()); // 继承当前窗口大小
+
+    // 显示新窗口
+    newMainWindow->show();
+
+    // 可选：将新窗口移动到适当位置（避免完全重叠）
+    newMainWindow->move(this->x() + 50, this->y() + 50);
+}
+
+
+void MainWindow::onActionSave()
+{
+
+}
+
+void MainWindow::onActionExit()
+{
+    close(); // 关闭应用程序
+}
+
+// PDF导出功能 - 使用第二个版本的完整实现
+void MainWindow::onActionExport() {
+    try {
+        // 创建报告对象
+        canproject::ComprehensiveReport report;
+
+        // 设置报告基本信息
+        report.projectName = "CAN总线网络优化项目";
+        report.author = "系统用户";
+        report.timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss").toStdString();
+        report.description = "CAN总线网络参数优化系统自动生成报告";
+
+        // 🎯 保存网络拓扑截图
+        QString screenshotPath = saveNetworkScreenshot();
+
+        // 🎯 使用正确的 ComprehensiveReport 结构体成员
+        // 1. 波特率计算模块数据
+        if (m_baudRateCalculated) {
+            report.baudRate.output.calculationSuccess = true;
+            report.baudRate.output.totalBitRate = calculateTotalBitRate();
+            report.baudRate.output.recommendedBaudRate = m_maxAllowedBaudRate * 1000;
+            report.baudRate.output.actualLoadPercent = calculateActualLoadPercent();
+        }
+
+        // 2. 网络拓扑设计模块数据
+        if (!m_nodeList.isEmpty()) {
+            report.network.output.overallSuccess = true;
+
+            // 添加节点信息到网段
+            for (int i = 0; i < m_nodeList.size(); ++i) {
+                canproject::Segment segment;
+                segment.id = i;
+                segment.startX = m_nodeList[i].xCoordinate;
+                segment.startY = m_nodeList[i].yCoordinate;
+                segment.endX = m_nodeList[i].xCoordinate;
+                segment.endY = m_nodeList[i].yCoordinate;
+                segment.nodeIds.push_back(i);
+                segment.length = 0.0;
+                segment.estimatedVoltage = 3.3;
+
+                report.network.output.segments.push_back(segment);
+            }
+
+            // 如果有网络设计结果，添加设备信息
+            if (m_bridgeModel->rowCount() > 0) {
+                for (int i = 0; i < m_bridgeModel->rowCount(); ++i) {
+                    QString deviceType = m_bridgeModel->item(i, 0)->text();
+                    double x = m_bridgeModel->item(i, 1)->text().toDouble();
+                    double y = m_bridgeModel->item(i, 2)->text().toDouble();
+
+                    if (deviceType == "终端电阻") {
+                        report.network.output.devices.terminators.push_back(std::make_pair(x, y));
+                    } else if (deviceType == "中继器") {
+                        report.network.output.devices.repeaters.push_back(std::make_pair(x, y));
+                    } else if (deviceType == "网桥") {
+                        report.network.output.devices.bridges.push_back(std::make_pair(x, y));
+                    }
+                }
+            }
+        }
+
+        // 3. 位时序配置模块数据
+        if (!ui->BRPtext->text().isEmpty()) {
+            report.bitTiming.output.calculationSuccess = true;
+            report.bitTiming.output.BRP = ui->BRPtext->text().toUInt();
+            report.bitTiming.output.SJW = ui->SJWtext->text().toUInt();
+            report.bitTiming.output.TSEG1 = ui->TSEG1text->text().toUInt();
+            report.bitTiming.output.TSEG2 = ui->TSEG2text->text().toUInt();
+
+            QString btrText = ui->btrRegisterLabel->text();
+            if (btrText.startsWith("0x")) {
+                bool ok;
+                report.bitTiming.output.btrRegister = btrText.mid(2).toUInt(&ok, 16);
+            }
+
+            report.bitTiming.output.errorPercent = calculateTimingError();
+
+            if (report.bitTiming.input.systemClock > 0) {
+                uint32_t brp = report.bitTiming.output.BRP;
+                uint32_t tseg1 = report.bitTiming.output.TSEG1;
+                uint32_t tseg2 = report.bitTiming.output.TSEG2;
+                if (brp > 0) {
+                    report.bitTiming.output.actualBaudRate = report.bitTiming.input.systemClock / (brp * (1 + tseg1 + tseg2));
+                }
+            }
+        }
+
+        // 4. 斜率控制模块数据
+        if (!ui->slopeResistorResultLabel->text().isEmpty() &&
+            ui->slopeResistorResultLabel->text() != "待计算") {
+            report.slopeControl.output.calculationSuccess = true;
+            report.slopeControl.output.actualRiseTimeNs = extractRiseTimeFromLabel(ui->slopeActualRiseTimeLabel->text());
+            report.slopeControl.output.recommendedResistor = extractResistanceFromLabel(ui->slopeResistorResultLabel->text());
+
+            // 从波特率选择框获取波特率
+            int baudSelection = ui->ChooseBaudcomboBox->currentIndex();
+            if (baudSelection == 0 && !ui->RBaudlineEdit->text().isEmpty()) {
+                report.slopeControl.input.baudrate = ui->RBaudlineEdit->text().replace(" kbps", "").toDouble() * 1000;
+            } else if (baudSelection == 1 && !ui->PBaudlineEdit->text().isEmpty()) {
+                report.slopeControl.input.baudrate = ui->PBaudlineEdit->text().replace(" kbps", "").toDouble() * 1000;
+            } else {
+                QString baudText = ui->ChooseBaudcomboBox->currentText().replace(" kbps", "");
+                report.slopeControl.input.baudrate = baudText.toDouble() * 1000;
+            }
+        }
+
+        // 设置输入参数
+        report.bitTiming.input.systemClock = ui->CLKbox->value() * 1000000;
+        int baudSelection = ui->ChooseBaudcomboBox->currentIndex();
+        if (baudSelection == 0 && !ui->RBaudlineEdit->text().isEmpty()) {
+            report.bitTiming.input.targetBaudRate = ui->RBaudlineEdit->text().replace(" kbps", "").toDouble() * 1000;
+        } else if (baudSelection == 1 && !ui->PBaudlineEdit->text().isEmpty()) {
+            report.bitTiming.input.targetBaudRate = ui->PBaudlineEdit->text().replace(" kbps", "").toDouble() * 1000;
+        } else {
+            report.bitTiming.input.targetBaudRate = 500000;
+        }
+        report.bitTiming.input.maxErrorPercent = 5.0;
+
+        report.baudRate.input.desiredLoadPercent = ui->BurdenSetBox->value();
+        for (const BaudRate &baudData : m_baudRateList) {
+            canproject::NodeData nodeData;
+            nodeData.nodeId = 0;
+            nodeData.frameType = baudData.FrameType;
+            nodeData.dataBytes = baudData.DataByte;
+            nodeData.sendTimeMs = baudData.SendTime;
+            nodeData.nodeCount = baudData.Node;
+            report.baudRate.input.nodeDataList.push_back(nodeData);
+        }
+
+        for (int i = 0; i < m_nodeList.size(); ++i) {
+            canproject::Node node;
+            node.id = i;
+            node.x = m_nodeList[i].xCoordinate;
+            node.y = m_nodeList[i].yCoordinate;
+            node.inputImpedance = 120.0;
+            report.network.input.nodes.push_back(node);
+        }
+        report.network.input.maxSegmentLength = 100.0;
+        report.network.input.maxNodesPerSegment = 32;
+        report.network.input.requiredMinReceiveVoltage = 0.9;
+
+        // 设置总体成功状态
+        report.allCalculationsSuccessful =
+            report.baudRate.output.calculationSuccess &&
+            report.network.output.overallSuccess &&
+            report.bitTiming.output.calculationSuccess &&
+            report.slopeControl.output.calculationSuccess;
+
+        // 生成PDF - 传递截图路径
+        pdfreport::PDFReportGenerator generator;
+        QString pdfFile = QFileDialog::getSaveFileName(
+            this,
+            "保存PDF报告",
+            "CAN网络设计报告.pdf",
+            "PDF文件 (*.pdf)"
+            );
+
+        if (!pdfFile.isEmpty()) {
+            // 传递截图路径给PDF生成器
+            if (generator.GenerateTechnicalReport(report, pdfFile, screenshotPath)) {
+                QMessageBox::information(this, "成功", "PDF报告生成成功！");
+
+                // 清理临时截图文件
+                if (!screenshotPath.isEmpty() && QFile::exists(screenshotPath)) {
+                    QFile::remove(screenshotPath);
+                }
+            } else {
+                QMessageBox::warning(this, "错误", "PDF报告生成失败！");
+            }
+        }
+
+    } catch (const std::exception& e) {
+        QMessageBox::critical(this, "错误", QString("导出报告时发生错误: %1").arg(e.what()));
+    }
+}
+// 导入配置
+void MainWindow::onImportConfigClicked()
+{
+    QString filename = QFileDialog::getOpenFileName(
+        this, "导入配置", "", "JSON文件 (*.json)");
+
+    if (!filename.isEmpty()) {
+        config::SystemConfig newConfig;
+        if (configManager.ImportConfig(filename, newConfig)) {
+            currentConfig = newConfig;
+            ApplyConfigToGUI(currentConfig);
+            QMessageBox::information(this, "成功", "配置导入成功！");
+        } else {
+            QMessageBox::warning(this, "错误", "配置导入失败：" + configManager.GetLastError());
+        }
+    }
+}
+
+// 导出配置
+void MainWindow::onExportConfigClicked()
+{
+    UpdateConfigFromGUI();
+
+    QString filename = QFileDialog::getSaveFileName(
+        this, "导出配置", "CAN配置.json", "JSON文件 (*.json)");
+
+    if (!filename.isEmpty()) {
+        if (configManager.ExportConfig(currentConfig, filename)) {
+            QMessageBox::information(this, "成功", "配置导出成功！");
+        } else {
+            QMessageBox::warning(this, "错误", "配置导出失败：" + configManager.GetLastError());
+        }
+    }
+}
+
+void MainWindow::UpdateConfigFromGUI()
+{
+    currentConfig = CollectConfigFromGUI();
+}
+
+// 从UI收集配置数据
+config::SystemConfig MainWindow::CollectConfigFromGUI()
+{
+    config::SystemConfig config;
+
+    // 基本信息
+    config.projectName = "CAN总线网络设计";
+    config.author = "用户";
+    config.description = "CAN总线参数优化";
+    config.timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss").toStdString();
+
+    // 波特率配置
+    config.baudRate.desiredLoadPercent = ui->BurdenSetBox->value();
+
+    // 网络配置（使用固定值）
+    config.network.maxSegmentLength = 100.0;
+    config.network.maxNodesPerSegment = 32;
+    config.network.requiredMinReceiveVoltage = 0.9;
+
+    // 位时序配置
+    config.bitTiming.systemClock = ui->CLKbox->value() * 1000000; // MHz转Hz
+
+    // 根据选择框获取波特率
+    int baudSelection = ui->ChooseBaudcomboBox->currentIndex();
+    if (baudSelection == 0 && !ui->RBaudlineEdit->text().isEmpty()) {
+        config.bitTiming.targetBaudRate = ui->RBaudlineEdit->text().replace(" kbps", "").toDouble() * 1000;
+    } else if (baudSelection == 1 && !ui->PBaudlineEdit->text().isEmpty()) {
+        config.bitTiming.targetBaudRate = ui->PBaudlineEdit->text().replace(" kbps", "").toDouble() * 1000;
+    } else {
+        config.bitTiming.targetBaudRate = 500000; // 默认值
+    }
+
+    config.bitTiming.maxErrorPercent = 1.0;
+
+    return config;
+}
+
+// 应用配置到UI
+void MainWindow::ApplyConfigToGUI(const config::SystemConfig& config)
+{
+    // 波特率配置
+    ui->BurdenSetBox->setValue(config.baudRate.desiredLoadPercent);
+
+    // 位时序配置
+    ui->CLKbox->setValue(config.bitTiming.systemClock / 1000000); // Hz转MHz
+
+    // 设置波特率显示
+    ui->RBaudlineEdit->setText(QString::number(config.bitTiming.targetBaudRate / 1000.0, 'f', 1) + " kbps");
+    ui->PBaudlineEdit->setText(QString::number(config.bitTiming.targetBaudRate / 1000.0, 'f', 1) + " kbps");
+    ui->ChooseBaudcomboBox->setCurrentIndex(1); // 选择推荐波特率
+
+    // 更新结果显示标签
+    ui->slopeResistorResultLabel->setText("待计算");
+    ui->slopeActualRiseTimeLabel->setText("待计算");
+    ui->slopeStatusLabel->setText("配置已加载");
+}
+
+
+
+
+
+
+
+
+/////////
 std::vector<canopt2::CanNodeInfo> MainWindow::convertToCanNodes() const
 {
     std::vector<canopt2::CanNodeInfo> nodes;
 
     for (const NodeInfo& qtNode : m_nodeList) {
+        // 只处理有发送消息的节点（发送节点）
+        if(qtNode.selectedSendMessages.isEmpty()) continue;
+
         canopt2::CanNodeInfo node;
         node.nodeName = qtNode.nodeName.toStdString();
 
-        // 只包含发送消息（接收消息不需要分配ID）
+        // 只包含发送消息（用于ID分配）
         for (const QString& messageName : qtNode.selectedSendMessages) {
             node.messageNames.push_back(messageName.toStdString());
         }
@@ -845,7 +1222,6 @@ std::vector<canopt2::CanNodeInfo> MainWindow::convertToCanNodes() const
 
     return nodes;
 }
-
 std::vector<canopt2::CanSignalInfo> MainWindow::convertToCanSignals() const
 {
     std::vector<canopt2::CanSignalInfo> canSignals;
@@ -854,7 +1230,7 @@ std::vector<canopt2::CanSignalInfo> MainWindow::convertToCanSignals() const
         canopt2::CanSignalInfo signal;
         signal.messageName = baud.Name.toStdString();
         signal.priority = baud.Priority;
-        signal.useExtendedId = (baud.FrameType == 1);
+      //  signal.useExtendedId = (baud.FrameType == 1); // 1表示扩展帧
 
         canSignals.push_back(signal);
     }
@@ -862,38 +1238,61 @@ std::vector<canopt2::CanSignalInfo> MainWindow::convertToCanSignals() const
     return canSignals;
 }
 
-// 为每个节点设计滤波器
 std::vector<std::pair<std::string, canopt2::FilterDesignResult>> MainWindow::designFiltersForAllNodes() const
 {
     std::vector<std::pair<std::string, canopt2::FilterDesignResult>> filterResults;
 
+    // 构建消息名称到ID列表的映射（一个消息名称可能对应多个ID）
+    std::map<std::string, std::vector<uint32_t>> messageToIdsMap;
+    for (const auto& allocation : m_idAllocationResults) {
+        messageToIdsMap[allocation.messageName].push_back(allocation.allocatedId);
+    }
+
     for (const NodeInfo& node : m_nodeList) {
         // 收集该节点需要接收的所有消息ID
-        std::vector<uint32_t> receiveMessageIds;
+        std::vector<uint32_t> allReceiveMessageIds;
 
-        // 查找该节点接收消息对应的ID
+        // 查找该节点接收消息对应的所有ID
         for (const QString& receiveMessage : node.selectedReceiveMessages) {
-            // 在分配结果中查找这个消息的ID
-            for (const auto& allocation : m_idAllocationResults) {
-                if (allocation.messageName == receiveMessage.toStdString()) {
-                    receiveMessageIds.push_back(allocation.allocatedId);
-                    break;
-                }
+            std::string msgName = receiveMessage.toStdString();
+            auto it = messageToIdsMap.find(msgName);
+            if (it != messageToIdsMap.end()) {
+                // 添加该消息名称对应的所有ID
+                allReceiveMessageIds.insert(allReceiveMessageIds.end(),
+                                            it->second.begin(), it->second.end());
             }
         }
 
-        if (!receiveMessageIds.empty()) {
-            bool useExtendedId = ui->extendedIdCheckBox->isChecked();
-            auto filterResult = canopt2::DesignCanFilter(receiveMessageIds, useExtendedId);
-            // 使用 pair 来关联节点名称和滤波器结果
+        // 去重并排序
+        std::sort(allReceiveMessageIds.begin(), allReceiveMessageIds.end());
+        auto last = std::unique(allReceiveMessageIds.begin(), allReceiveMessageIds.end());
+        allReceiveMessageIds.erase(last, allReceiveMessageIds.end());
+
+        if (!allReceiveMessageIds.empty()) {
+           bool useExtendedId ;
+            auto filterResult = canopt2::DesignCanFilter(allReceiveMessageIds, useExtendedId);
+
+            // 添加调试信息
+            qDebug() << "节点" << node.nodeName << "接收ID:";
+            for (uint32_t id : allReceiveMessageIds) {
+                qDebug() << "  ID: 0x" << QString::number(id, 16);
+            }
+            qDebug() << "滤波器模式:" << QString::fromStdString(filterResult.mode);
+
             filterResults.emplace_back(node.nodeName.toStdString(), filterResult);
+        } else {
+            // 如果没有接收消息，也记录一个空结果
+            canopt2::FilterDesignResult emptyResult;
+            emptyResult.mode = "none";
+            emptyResult.filterCount = 0;
+            emptyResult.note = "无接收消息";
+            filterResults.emplace_back(node.nodeName.toStdString(), emptyResult);
         }
     }
 
     return filterResults;
 }
-
-void MainWindow::on_allocateAndDesignButton_clicked()
+void MainWindow::allocateAndDesignButton_clicked()
 {
     if (m_nodeList.isEmpty() || m_baudRateList.isEmpty()) {
         QMessageBox::warning(this, "错误", "请先添加节点和消息数据！");
@@ -909,8 +1308,8 @@ void MainWindow::on_allocateAndDesignButton_clicked()
         qDebug() << "节点数量:" << nodes.size();
         qDebug() << "信号数量:" << canSignals.size();
 
-        bool useExtendedId = ui->extendedIdCheckBox->isChecked();
-        uint32_t startId = static_cast<uint32_t>(ui->startIdSpinBox->value());
+       bool useExtendedId ;
+        uint32_t startId ;
 
         m_idAllocationResults = canopt2::AllocateCanIds(nodes, canSignals, useExtendedId, startId);
 
@@ -928,7 +1327,7 @@ void MainWindow::on_allocateAndDesignButton_clicked()
 
         // 步骤4: 生成报告
         std::string fullReport = generateCompleteReport(filterResults);
-        ui->reportTextEdit->setPlainText(QString::fromStdString(fullReport));
+      //  ui->reportTextEdit->setPlainText(QString::fromStdString(fullReport));
 
         QMessageBox::information(this, "完成",
                                  QString("CAN网络配置完成！\n\n"
@@ -960,7 +1359,7 @@ std::string MainWindow::generateCompleteReport(const std::vector<std::pair<std::
         report += "节点: " + nodeName + "\n";
         for (const auto& allocation : allocations) {
             report += "  └─ " + allocation.messageName + " : 0x" +
-                      QString("%1").arg(allocation.allocatedId, 0, 16).toStdString() + "\n";
+                      QString("%1").arg(allocation.allocatedId, 0, 16).toUpper().toStdString() + "\n";
         }
         report += "\n";
     }
@@ -973,8 +1372,10 @@ std::string MainWindow::generateCompleteReport(const std::vector<std::pair<std::
         report += "节点: " + nodeName + "\n";
         report += "  模式: " + filter.mode + "\n";
         report += "  滤波器数量: " + std::to_string(filter.filterCount) + "\n";
-        report += "  滤波器ID: 0x" + QString("%1").arg(filter.filterId, 0, 16).toStdString() + "\n";
-        report += "  掩码/最大ID: 0x" + QString("%1").arg(filter.maskOrMaxId, 0, 16).toStdString() + "\n";
+        if (filter.mode != "none") {
+            report += "  滤波器ID: 0x" + QString("%1").arg(filter.filterId, 0, 16).toUpper().toStdString() + "\n";
+            report += "  掩码/最大ID: 0x" + QString("%1").arg(filter.maskOrMaxId, 0, 16).toUpper().toStdString() + "\n";
+        }
         report += "  说明: " + filter.note + "\n\n";
     }
 
@@ -986,6 +1387,23 @@ std::string MainWindow::generateCompleteReport(const std::vector<std::pair<std::
         report += "节点: " + node.nodeName.toStdString() + "\n";
         report += "  发送消息: " + std::to_string(node.selectedSendMessages.size()) + " 个\n";
         report += "  接收消息: " + std::to_string(node.selectedReceiveMessages.size()) + " 个\n";
+
+        // 显示具体的发送和接收消息
+        if (!node.selectedSendMessages.isEmpty()) {
+            report += "  发送: ";
+            for (const QString& msg : node.selectedSendMessages) {
+                report += msg.toStdString() + " ";
+            }
+            report += "\n";
+        }
+
+        if (!node.selectedReceiveMessages.isEmpty()) {
+            report += "  接收: ";
+            for (const QString& msg : node.selectedReceiveMessages) {
+                report += msg.toStdString() + " ";
+            }
+            report += "\n";
+        }
         report += "\n";
     }
 
@@ -1010,7 +1428,7 @@ void MainWindow::updateIdAllocationTable()
     ui->idAllocationTableView->resizeColumnsToContents();
 }
 
-// 更新滤波器设计表格（支持多个节点）
+// 更新滤波器设计表格
 void MainWindow::updateFilterDesignTable(const std::vector<std::pair<std::string, canopt2::FilterDesignResult>>& filterResults)
 {
     m_filterDesignModel->removeRows(0, m_filterDesignModel->rowCount());
@@ -1019,10 +1437,11 @@ void MainWindow::updateFilterDesignTable(const std::vector<std::pair<std::string
         QList<QStandardItem*> rowItems;
 
         rowItems << new QStandardItem(QString::fromStdString(nodeName));
+        rowItems << new QStandardItem(QString::fromStdString(result.mode));
         rowItems << new QStandardItem(QString::number(result.filterCount));
         rowItems << new QStandardItem(QString("0x%1").arg(result.filterId, 0, 16));
         rowItems << new QStandardItem(QString("0x%1").arg(result.maskOrMaxId, 0, 16));
-        rowItems << new QStandardItem(QString::fromStdString(result.mode + " - " + result.note));
+        rowItems << new QStandardItem(QString::fromStdString(result.note));
 
         m_filterDesignModel->appendRow(rowItems);
     }
@@ -1030,71 +1449,128 @@ void MainWindow::updateFilterDesignTable(const std::vector<std::pair<std::string
     ui->filterDesignTableView->resizeColumnsToContents();
 }
 
-// 保存报告到文件
-void MainWindow::on_generateReportButton_clicked()
-{
-    if (m_idAllocationResults.empty()) {
-        QMessageBox::warning(this, "错误", "没有可用的配置结果！");
-        return;
+
+
+// ==================== 报告数据收集辅助函数实现 ====================
+
+double MainWindow::calculateTotalBitRate() {
+    double totalBitsPerSecond = 0.0f;
+    for (const BaudRate &data : m_baudRateList) {
+        int frameBits = calculateFrameBits(data);
+        float frequency = 1000.0f / data.SendTime;
+        float bitsPerSecond = frameBits * frequency * data.Node;
+        totalBitsPerSecond += bitsPerSecond;
     }
+    return totalBitsPerSecond;
+}
 
-    try {
-        // 重新生成滤波器结果（为了包含在报告中）
-        auto filterResults = designFiltersForAllNodes();
-        std::string fullReport = generateCompleteReport(filterResults);
+double MainWindow::calculateActualLoadPercent() {
+    if (m_maxAllowedBaudRate <= 0) return 0.0;
+    double totalBitRate = calculateTotalBitRate();
+    return (totalBitRate / (m_maxAllowedBaudRate * 1000)) * 100.0;
+}
 
-        ui->reportTextEdit->setPlainText(QString::fromStdString(fullReport));
-
-        QString fileName = QFileDialog::getSaveFileName(this, "保存报告", "can_network_config.txt", "文本文件 (*.txt)");
-        if (!fileName.isEmpty()) {
-            QFile file(fileName);
-            if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-                QTextStream stream(&file);
-                stream << QString::fromStdString(fullReport);
-                file.close();
-                QMessageBox::information(this, "成功", "报告已保存！");
-            }
-        }
-
-    } catch (const std::exception& e) {
-        QMessageBox::critical(this, "错误", QString("生成报告失败: %1").arg(e.what()));
+double MainWindow::calculateSamplingPoint() {
+    if (!ui->TSEG1text->text().isEmpty() && !ui->TSEG2text->text().isEmpty()) {
+        int tseg1 = ui->TSEG1text->text().toInt();
+        int tseg2 = ui->TSEG2text->text().toInt();
+        return (tseg1 + 1) * 100.0 / (tseg1 + tseg2 + 1);
     }
+    return 75.0;
 }
 
-// 设置栏操作
-void MainWindow::onActionOpen()
-{
-
-}
-
-void MainWindow::onActionSave()
-{
-}
-
-void MainWindow::onActionExit()
-{
-    close(); // 关闭应用程序
-}
-
-void MainWindow::onActionExport()
-{
-    // 收集数据到report...
-
-    pdfreport::PDFReportGenerator generator;
-    canproject::ComprehensiveReport report;
-
-    QString pdfFile = QFileDialog::getSaveFileName(
-        this,
-        "保存PDF报告",
-        "CAN网络设计报告.pdf",
-        "PDF文件 (*.pdf)"
-        );
-
-    if (!pdfFile.isEmpty()) {
-        if (generator.GenerateTechnicalReport(report, pdfFile)) {
-            QMessageBox::information(this, "成功", "PDF报告生成成功！");
-        } else {
-            QMessageBox::warning(this, "错误", "PDF报告生成失败！");
+double MainWindow::calculateMaxCableLength() {
+    double maxLength = 0.0;
+    for (const BaudRate &data : m_baudRateList) {
+        if (data.MaxLenth > maxLength) {
+            maxLength = data.MaxLenth;
         }
     }
+    return maxLength;
 }
+
+double MainWindow::calculateTimingError() {
+    QString statusText;
+
+    if (qobject_cast<QTextEdit*>(ui->statuslabel)) {
+        statusText = qobject_cast<QTextEdit*>(ui->statuslabel)->toPlainText();
+    } else if (qobject_cast<QLabel*>(ui->statuslabel)) {
+        statusText = qobject_cast<QLabel*>(ui->statuslabel)->text();
+    } else {
+        return 1.0;
+    }
+
+    QRegularExpression re("误差: (\\d+\\.?\\d*)%");
+    QRegularExpressionMatch match = re.match(statusText);
+    if (match.hasMatch()) {
+        return match.captured(1).toDouble();
+    }
+
+    return 1.0;
+}
+
+double MainWindow::calculatePropagationDelay() {
+    double cableLength = calculateMaxCableLength();
+    return cableLength / 200000000.0 * 1e9;
+}
+
+double MainWindow::extractRiseTimeFromLabel(const QString& labelText) {
+    QRegularExpression re("(\\d+\\.?\\d*) ns");
+    QRegularExpressionMatch match = re.match(labelText);
+    if (match.hasMatch()) {
+        return match.captured(1).toDouble();
+    }
+    return 0.0;
+}
+
+double MainWindow::extractResistanceFromLabel(const QString& labelText) {
+    QRegularExpression re("(\\d+\\.?\\d*) Ω");
+    QRegularExpressionMatch match = re.match(labelText);
+    if (match.hasMatch()) {
+        return match.captured(1).toDouble();
+    }
+    return 0.0;
+}
+
+QPixmap MainWindow::captureNetworkView() {
+    if (networkView_) {
+        networkView_->update();
+        QApplication::processEvents();
+        return networkView_->grab();
+    }
+    return QPixmap();
+}
+
+QString MainWindow::saveNetworkScreenshot() {
+    QPixmap screenshot = captureNetworkView();
+    if (screenshot.isNull()) {
+        qDebug() << "无法捕获网络视图截图";
+        return "";
+    }
+
+    QString tempDir = QDir::tempPath() + "/CAN_Network_Reports";
+    QDir dir(tempDir);
+    if (!dir.exists()) {
+        dir.mkpath(".");
+    }
+
+    QString timestamp = QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss_zzz");
+    QString filename = QString("network_topology_%1.png").arg(timestamp);
+    QString fullPath = tempDir + "/" + filename;
+
+    if (screenshot.save(fullPath, "PNG", 100)) {
+        qDebug() << "网络拓扑截图已保存:" << fullPath;
+        m_currentScreenshotPath = fullPath;
+        return fullPath;
+    } else {
+        qDebug() << "保存截图失败:" << fullPath;
+        return "";
+    }
+}
+
+
+void MainWindow::on_Next2Button_clicked()
+{
+    ui->tabWidget->setCurrentIndex(2);
+}
+

@@ -18,6 +18,7 @@ DEFINES += QT_DEPRECATED_WARNINGS
 
 SOURCES += \
     ComprehensiveReport.cpp \
+    ConfigManager.cpp \
     NetworkView.cpp \
     PDFReportGenerator.cpp \
     addbaud.cpp \
@@ -31,6 +32,8 @@ SOURCES += \
 
 HEADERS += \
     ComprehensiveReport.h \
+    ConfigManager.h \
+    Configdata.h \
     NetworkView.h \
     PDFReportGenerator.h \
     addbaud.h \
@@ -50,3 +53,9 @@ FORMS += \
 qnx: target.path = /tmp/$${TARGET}/bin
 else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
+
+RESOURCES += \
+    icon.qrc
+
+DISTFILES += \
+    style.qss
