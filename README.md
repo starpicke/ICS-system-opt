@@ -65,7 +65,7 @@ ICS-system-opt/
 1. **克隆仓库**
    ```bash
    git clone https://github.com/starpicke/ICS-system-opt
-   cd QoptimalICS
+   cd ICS-system-opt
 
 1. 配置项目
    ```bash
