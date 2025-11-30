@@ -5,6 +5,7 @@
         <file>resources/icon/load.png</file>
         <file>resources/icon/quit.png</file>
         <file>resources/icon/new.png</file>
+        <file>resources/icon/tubiao.ico</file>
     </qresource>
     <qresource prefix="/style">
         <file>style.qss</file>
