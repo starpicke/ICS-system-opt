@@ -1,14 +1,20 @@
+//NetworkDesigner.cpp
 #include "NetworkDesigner.h"
 #include <fstream>
 #include <cmath>
 #include <algorithm>
 #include <iostream>
 #include <sstream>
+#include <random>
 
 namespace IndustrialNet {
 
 NetworkDesigner::NetworkDesigner(const DesignerParams& params)
-    : p_(params) {}
+    : p_(params), rng_(std::random_device{}()) {}  // 初始化随机数生成器
+
+void NetworkDesigner::setACOParams(const ACOParams& aco_params) {
+    aco_params_ = aco_params;
+}
 
 double NetworkDesigner::distance2D(double x1, double y1, double x2, double y2) const {
     return std::sqrt((x1 - x2)*(x1 - x2) + (y1 - y2)*(y1 - y2));
@@ -38,74 +44,288 @@ double NetworkDesigner::estimateReceivedVoltage(double Vout, double segment_leng
     return Vout / denom;
 }
 
-std::vector<Segment> NetworkDesigner::partitionIntoSegments(const std::vector<Node>& nodes) {
-    std::vector<Segment> segments;
-    if (nodes.empty()) return segments;
 
-    Segment seg;
-    seg.id = 0;
+std::vector<Segment> NetworkDesigner::partitionWithACO(const std::vector<Node>& nodes) {
+    if (nodes.empty()) return {};
 
-    double accum_len = 0.0;             // 当前段的累计长度（沿节点）
-    int nodes_in_seg = 0;               // 当前段节点数
-    // 辅助：记录上一个节点坐标用于增量计算
-    double last_x = 0.0, last_y = 0.0;
-    bool has_last = false;
+    // 第一步：找到最短路径（不分段）
+    auto shortest_path = findShortestPathACO(nodes);
 
-    for (size_t i = 0; i < nodes.size(); ++i) {
-        const Node& cur = nodes[i];
+    // 第二步：根据约束条件分段
+    return splitPathIntoSegments(nodes, shortest_path);
+}
 
-        if (!has_last) {
-            // 段刚开始，加入第一个节点
-            seg.node_ids.push_back(cur.id);
-            nodes_in_seg = 1;
-            accum_len = 0.0;
-            last_x = cur.x;
-            last_y = cur.y;
-            has_last = true;
-            continue;
+// 新增：找到最短路径（不分段）
+std::vector<int> NetworkDesigner::findShortestPathACO(const std::vector<Node>& nodes) {
+    auto distances = calculateDistanceMatrix(nodes);
+    int n_nodes = nodes.size();
+
+    std::vector<std::vector<double>> pheromone(n_nodes,
+                                               std::vector<double>(n_nodes, aco_params_.initial_pheromone));
+
+    std::vector<int> best_path;
+    double best_distance = 1e9;
+
+    for (int iter = 0; iter < aco_params_.max_iterations; ++iter) {
+        std::vector<std::vector<int>> all_paths;
+        std::vector<double> all_distances;
+
+        for (int ant = 0; ant < aco_params_.ant_count; ++ant) {
+            // 随机选择起点
+            std::uniform_int_distribution<int> start_dist(0, n_nodes - 1);
+            int start_node = start_dist(rng_);
+
+            std::vector<int> path = {start_node};
+            std::vector<bool> visited(n_nodes, false);
+            visited[start_node] = true;
+            int current_node = start_node;
+
+            // 构建完整路径
+            while (path.size() < (size_t)n_nodes) {
+                std::vector<int> unvisited;
+                for (int i = 0; i < n_nodes; ++i) {
+                    if (!visited[i]) unvisited.push_back(i);
+                }
+                if (unvisited.empty()) break;
+
+                int next_node = selectNextNodeACO(nodes, visited, current_node, pheromone, distances);
+                if (next_node == -1) break;
+
+                path.push_back(next_node);
+                visited[next_node] = true;
+                current_node = next_node;
+            }
+
+            // 计算路径距离
+            double distance = calculatePathDistance(path, distances);
+            all_paths.push_back(path);
+            all_distances.push_back(distance);
+
+            if (distance < best_distance) {
+                best_distance = distance;
+                best_path = path;
+            }
         }
 
-        // 计算从上一个节点到当前节点的边长
-        double edge = distance2D(last_x, last_y, cur.x, cur.y);
+        // 更新信息素
+        updatePheromoneACO(pheromone, all_paths, all_distances);
+    }
 
-        // 如果加入当前节点会违反长度或节点数限制，则先把当前段收尾并开启新段
-        bool exceed_length = (accum_len + edge) > p_.max_segment_length_m;
-        bool exceed_nodes = (nodes_in_seg + 1) > p_.max_nodes_per_segment;
+    return best_path;
+}
+
+// 根据约束条件分段
+std::vector<Segment> NetworkDesigner::splitPathIntoSegments(const std::vector<Node>& nodes,
+                                                            const std::vector<int>& path) {
+    std::vector<Segment> segments;
+    if (path.empty()) return segments;
+
+    // 设置余量系数（1.2-1.5倍）
+    double length_margin = 0.8;  // 1.3倍余量
+    double max_length_with_margin = p_.max_segment_length_m * length_margin;
+
+    Segment current_segment;
+    current_segment.id = 0;
+    current_segment.node_ids.push_back(path[0]);
+
+    for (size_t i = 1; i < path.size(); ++i) {
+        // 检查添加节点是否违反约束（使用带余量的长度）
+        std::vector<int> temp_segment = current_segment.node_ids;
+        temp_segment.push_back(path[i]);
+
+        Segment temp_seg;
+        temp_seg.node_ids = temp_segment;
+        double seg_length = segmentLengthAlongNodes(nodes, temp_seg);
+
+        // 使用带余量的长度检查
+        bool exceed_length = seg_length > max_length_with_margin;
+        bool exceed_nodes = temp_segment.size() > (size_t)p_.max_nodes_per_segment;
 
         if (exceed_length || exceed_nodes) {
             // 结束当前段
-            seg.start_pos_m = 0.0;
-            seg.end_pos_m = segmentLengthAlongNodes(nodes, seg); // 保持与现有逻辑一致
-            segments.push_back(seg);
-
-            // 新段初始化，从当前节点开始（不把边加入上段）
-            seg = Segment();
-            seg.id = int(segments.size());
-            seg.node_ids.clear();
-            seg.node_ids.push_back(cur.id);
-            nodes_in_seg = 1;
-            accum_len = 0.0;
-            last_x = cur.x;
-            last_y = cur.y;
-            // has_last remains true
+            if (current_segment.node_ids.size() >= 2) {
+                current_segment.start_pos_m = 0.0;
+                current_segment.end_pos_m = segmentLengthAlongNodes(nodes, current_segment);
+                segments.push_back(current_segment);
+            }
+            // 开始新段
+            current_segment = Segment();
+            current_segment.id = segments.size();
+            current_segment.node_ids.push_back(path[i]);  // 新段从当前节点开始
         } else {
-            // 可以把当前节点加入本段
-            seg.node_ids.push_back(cur.id);
-            accum_len += edge;
-            nodes_in_seg += 1;
-            last_x = cur.x;
-            last_y = cur.y;
+            current_segment.node_ids.push_back(path[i]);
         }
     }
 
-    // 推入最后一个未保存的段
-    if (!seg.node_ids.empty()) {
-        seg.start_pos_m = 0.0;
-        seg.end_pos_m = segmentLengthAlongNodes(nodes, seg);
-        segments.push_back(seg);
+    // 添加最后一个段
+    if (current_segment.node_ids.size() >= 2) {
+        current_segment.start_pos_m = 0.0;
+        current_segment.end_pos_m = segmentLengthAlongNodes(nodes, current_segment);
+        segments.push_back(current_segment);
     }
 
     return segments;
+}
+// 修改现有的 selectNextNode 方法（重命名）
+int NetworkDesigner::selectNextNodeACO(const std::vector<Node>& nodes,
+                                       const std::vector<bool>& visited,
+                                       int current_node,
+                                       const std::vector<std::vector<double>>& pheromone,
+                                       const std::vector<std::vector<double>>& distances) const {
+    std::vector<int> candidates;
+    std::vector<double> probabilities;
+    double total = 0.0;
+
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        if (!visited[i]) {
+            candidates.push_back(i);
+            double tau = pheromone[current_node][i];
+            double eta = 1.0 / (distances[current_node][i] + 1e-6);
+            double prob = std::pow(tau, aco_params_.alpha) * std::pow(eta, aco_params_.beta);
+            probabilities.push_back(prob);
+            total += prob;
+        }
+    }
+
+    if (candidates.empty()) return -1;
+
+    if (total > 0) {
+        for (auto& prob : probabilities) {
+            prob /= total;
+        }
+
+        std::uniform_real_distribution<double> dist(0.0, 1.0);
+        double r = dist(rng_);
+        double sum = 0.0;
+
+        for (size_t i = 0; i < probabilities.size(); ++i) {
+            sum += probabilities[i];
+            if (r <= sum) {
+                return candidates[i];
+            }
+        }
+    }
+
+    return candidates[0];
+}
+
+// 新增：计算路径距离
+double NetworkDesigner::calculatePathDistance(const std::vector<int>& path,
+                                              const std::vector<std::vector<double>>& distances) const {
+    double total_distance = 0.0;
+    for (size_t i = 1; i < path.size(); ++i) {
+        total_distance += distances[path[i-1]][path[i]];
+    }
+    return total_distance;
+}
+
+// 修改现有的 updatePheromone 方法
+void NetworkDesigner::updatePheromoneACO(std::vector<std::vector<double>>& pheromone,
+                                         const std::vector<std::vector<int>>& solutions,
+                                         const std::vector<double>& distances) const {
+    // 信息素蒸发
+    for (auto& row : pheromone) {
+        for (auto& value : row) {
+            value *= (1.0 - aco_params_.evaporation_rate);
+        }
+    }
+
+    // 信息素增强
+    for (size_t i = 0; i < solutions.size(); ++i) {
+        const auto& path = solutions[i];
+        double distance = distances[i];
+        double pheromone_to_add = aco_params_.initial_pheromone / distance;
+
+        for (size_t j = 1; j < path.size(); ++j) {
+            int from = path[j-1];
+            int to = path[j];
+            pheromone[from][to] += pheromone_to_add;
+            pheromone[to][from] += pheromone_to_add;
+        }
+    }
+}
+
+//启发函数
+double NetworkDesigner::calculateHeuristic(const std::vector<Node>& nodes, int from, int to) const {
+    double dist = distance2D(nodes[from].x, nodes[from].y, nodes[to].x, nodes[to].y);
+
+    // 相邻节点有很高的优先级
+    if (abs(from - to) == 1) {
+        return 10.0;
+    }
+
+    return 1.0 / (dist + 1e-6);
+}
+
+
+//质量评估
+double NetworkDesigner::calculateSegmentQuality(const std::vector<Node>& nodes, const std::vector<int>& segment_nodes) const {
+    if (segment_nodes.size() < 2) return -1000.0;
+
+    double length = segmentLengthAlongNodes(nodes, Segment{0, 0.0, 0.0, segment_nodes});
+    double voltage = estimateReceivedVoltage(p_.driver_peak_voltage_v, length, (int)segment_nodes.size());
+
+    // 主要优化目标：最小化路径长度和段数
+    double length_penalty = length * 0.1;  // 长度惩罚
+    double segment_penalty = 100.0;        // 每增加一个段的惩罚
+
+    // 电压约束（适当放宽）
+    double voltage_score = (voltage >= p_.required_min_receive_v * 0.8) ? 0.0 : -500.0;
+
+    // 连续性奖励（重要！）
+    double continuity_score = 0.0;
+    for (size_t i = 1; i < segment_nodes.size(); ++i) {
+        if (abs(segment_nodes[i] - segment_nodes[i-1]) == 1) {
+            continuity_score += 50.0; // 连续节点重奖
+        } else {
+            continuity_score -= 100.0; // 非连续节点重罚
+        }
+    }
+
+    return -length_penalty - segment_penalty + voltage_score + continuity_score;
+}
+
+
+int NetworkDesigner::selectNextNode(const std::vector<Node>& nodes,
+                                    const std::vector<bool>& visited,
+                                    int current_node,
+                                    const std::vector<std::vector<double>>& pheromone) const {
+    std::vector<int> candidates;
+    std::vector<double> probabilities;
+    double total = 0.0;
+
+    // 收集所有候选节点
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        if (!visited[i] && i != current_node) {
+            candidates.push_back(i);
+            double tau = pheromone[current_node][i];
+            double eta = calculateHeuristic(nodes, current_node, i);
+            double prob = std::pow(tau, aco_params_.alpha) * std::pow(eta, aco_params_.beta);
+            probabilities.push_back(prob);
+            total += prob;
+        }
+    }
+
+    if (candidates.empty()) return -1;
+
+    // 归一化概率
+    for (auto& prob : probabilities) {
+        prob /= total;
+    }
+
+    // 轮盘赌选择
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+    double r = dist(rng_);
+    double sum = 0.0;
+
+    for (size_t i = 0; i < probabilities.size(); ++i) {
+        sum += probabilities[i];
+        if (r <= sum) {
+            return candidates[i];
+        }
+    }
+
+    return candidates.back();
 }
 
 
@@ -146,6 +366,7 @@ void NetworkDesigner::refineSegmentsByVin(const std::vector<Node>& nodes, std::v
 DevicePlacement NetworkDesigner::planDevices(const std::vector<Node>& nodes, const std::vector<Segment>& segs) {
     DevicePlacement dev;
 
+    // 遍历段，跳过空段
     for (size_t i = 0; i < segs.size(); ++i) {
         const Segment& s = segs[i];
         if (s.node_ids.empty()) continue;
@@ -184,31 +405,20 @@ DevicePlacement NetworkDesigner::planDevices(const std::vector<Node>& nodes, con
             }
         }
         dev.terminator_positions.push_back(adjustTerminatorPosition(ex, ey, dev.terminator_positions, nodes));
-
-        // ===== 中继器逻辑 =====
-        double segLen = segmentLengthAlongNodes(nodes, s);
-        if (segLen > p_.max_segment_length_m || s.node_ids.size() > size_t(p_.max_nodes_per_segment)) {
-            if (s.node_ids.size() >= 2) {
-                size_t midIndex = s.node_ids.size() / 2;
-                const Node& a = nodes[s.node_ids[midIndex - 1]];
-                const Node& b = nodes[s.node_ids[midIndex]];
-                double rx = (a.x + b.x) / 2.0;
-                double ry = (a.y + b.y) / 2.0;
-                dev.repeater_positions.push_back({ rx, ry });
-            }
-        }
     }
 
-    // ===== 网桥逻辑 =====
-    // 每两个段之间一个网桥
-    for (size_t i = 0; i + 1 < segs.size(); ++i) {
-        const Segment& cur = segs[i];
-        const Segment& nxt = segs[i + 1];
+    // ===== 中继器逻辑（每两个段之间一个中继器） =====
+    for (size_t k = 0; k + 1 < segs.size(); ++k) {
+        const Segment& cur = segs[k];
+        const Segment& nxt = segs[k + 1];
+        if (cur.node_ids.empty() || nxt.node_ids.empty()) continue;
+
         const Node& end_cur    = nodes[cur.node_ids.back()];
         const Node& start_next = nodes[nxt.node_ids.front()];
-        double bx = (end_cur.x + start_next.x) / 2.0;
-        double by = (end_cur.y + start_next.y) / 2.0;
-        dev.bridge_positions.push_back({ bx, by });
+        double rx = (end_cur.x + start_next.x) / 2.0;
+        double ry = (end_cur.y + start_next.y) / 2.0;
+
+        dev.repeater_positions.push_back({ rx, ry });
     }
 
     return dev;
@@ -282,7 +492,12 @@ std::vector<std::pair<int,bool>> NetworkDesigner::checkReceiveLevels(const std::
 DesignResult NetworkDesigner::designNetwork(const std::vector<Node>& nodes) {
     DesignResult res;
 
-    res.segments = partitionIntoSegments(nodes);
+    // 使用蚁群算法替换原有的分段算法
+    res.segments = partitionWithACO(nodes);
+
+    // 计算总路径长度
+    res.total_path_length = calculateTotalPathLength(nodes, res.segments);
+
     refineSegmentsByVin(nodes, res.segments);
     res.devices = planDevices(nodes, res.segments);
     res.node_receive_ok = checkReceiveLevels(nodes, res.segments);
@@ -290,11 +505,20 @@ DesignResult NetworkDesigner::designNetwork(const std::vector<Node>& nodes) {
     res.overall_ok = true;
     for (auto& p : res.node_receive_ok) if (!p.second) res.overall_ok = false;
 
-    std::ostringstream ss;
-    ss << "网络设计完成. 段数=" << res.segments.size();
-    res.logs.push_back(ss.str());
-
     return res;
+}
+
+// 计算总路径长度
+double NetworkDesigner::calculateTotalPathLength(const std::vector<Node>& nodes,
+                                                 const std::vector<Segment>& segments) const {
+    double total_length = 0.0;
+
+    // 方法1：直接计算所有段的长度之和
+    for (const auto& seg : segments) {
+        total_length += segmentLengthAlongNodes(nodes, seg);
+    }
+
+    return total_length;
 }
 
 // SVG生成和打印报告保持不变
@@ -326,10 +550,9 @@ bool NetworkDesigner::generateSVG(const std::vector<Node>& nodes, const DesignRe
         ofs << "<text x=\"" << n.x+6 << "\" y=\"" << n.y-6 << "\" font-size=\"12\" fill=\"black\">" << n.id << "</text>\n";
     }
 
-    for (auto& r : result.devices.repeater_positions)
-        ofs << "<rect x=\"" << r.first-4 << "\" y=\"" << r.second-4 << "\" width=\"8\" height=\"8\" fill=\"blue\" />\n";
 
-    for (auto& b : result.devices.bridge_positions){
+
+    for (auto& b : result.devices.repeater_positions){
         double x=b.first,y=b.second;
         ofs << "<polygon points=\"" << x << "," << (y-5) << " " << (x+5) << "," << y
             << " " << x << "," << (y+5) << " " << (x-5) << "," << y << "\" fill=\"purple\" />\n";
@@ -371,10 +594,7 @@ void NetworkDesigner::printDesignReport(const std::vector<Node>& nodes, const De
         std::cout << "(" << pos.first << "," << pos.second << ") ";
     std::cout << "\n";
 
-    std::cout << "网桥位置: ";
-    for(auto& pos : result.devices.bridge_positions)
-        std::cout << "(" << pos.first << "," << pos.second << ") ";
-    std::cout << "\n";
+
 
     std::cout << "节点接收显性电平检查:\n";
     for(auto& n : result.node_receive_ok)

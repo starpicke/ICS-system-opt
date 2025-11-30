@@ -69,6 +69,11 @@ private:
     // 工具函数
     bool CheckNewPage(int y, int requiredHeight = 100);
     int CalculateTextHeight(QPainter& painter, const QString& text, int width);
+    //网桥绘制
+    void DrawBridgeRepeaterTable(QPainter& painter, int& currentY, const canproject::ComprehensiveReport& report);
+    QString DetermineConnectedSegments(const std::pair<double, double>& devicePos, const canproject::ComprehensiveReport& report);
+
+
 
     QPrinter printer;
 };

@@ -248,27 +248,16 @@ void PDFReportGenerator::DrawModuleDetails(QPainter& painter, const canproject::
         DrawTableRowCentered(painter, currentY, "中继器数量", QString::number(report.network.output.devices.repeaters.size()) + "个", CONTENT_WIDTH);
         DrawTableRowCentered(painter, currentY, "网桥数量", QString::number(report.network.output.devices.bridges.size()) + "个", CONTENT_WIDTH);
 
-        // 终端电阻位置表格
-        if (!report.network.output.devices.terminators.empty()) {
-            currentY += 30;
-            painter.setFont(moduleTitleFont);
-            painter.setPen(QColor(0, 100, 200));
-            QRect terminatorTitleRect(CONTENT_MARGIN_LEFT, currentY, CONTENT_WIDTH, 25);
-            painter.drawText(terminatorTitleRect, Qt::AlignLeft, "终端电阻位置");
-            currentY += 30;
+        // 🎯 修改：总是显示中继器/网桥配置部分，即使数量为0
+        currentY += 30;
+        painter.setFont(moduleTitleFont);
+        painter.setPen(QColor(0, 100, 200));
+        QRect bridgeRepeaterTitleRect(CONTENT_MARGIN_LEFT, currentY, CONTENT_WIDTH, 25);
+        painter.drawText(bridgeRepeaterTitleRect, Qt::AlignLeft, "中继器/网桥配置");
+        currentY += 30;
 
-            painter.setFont(smallFont);
-            painter.setPen(QColor(70, 70, 150));
-            DrawTableRowCentered(painter, currentY, "序号", "位置坐标(X,Y)", CONTENT_WIDTH);
-            currentY += 5;
-
-            painter.setPen(Qt::black);
-            for (size_t i = 0; i < report.network.output.devices.terminators.size(); ++i) {
-                const auto& terminator = report.network.output.devices.terminators[i];
-                QString position = QString("(%1, %2)").arg(terminator.first, 0, 'f', 2).arg(terminator.second, 0, 'f', 2);
-                DrawTableRowCentered(painter, currentY, QString::number(i + 1), position, CONTENT_WIDTH);
-            }
-        }
+        // 🎯 绘制中继器/网桥表格
+        DrawBridgeRepeaterTable(painter, currentY, report);
 
         // 网络拓扑图 - 使用截图
         currentY += 30;
@@ -324,7 +313,7 @@ void PDFReportGenerator::DrawModuleDetails(QPainter& painter, const canproject::
     currentY += 50;
 
     // 检查分页
-    if (CheckNewPage(currentY, 200)) { // 减少所需高度，因为斜率控制模块内容减少了
+    if (CheckNewPage(currentY, 200)) {
         printer.newPage();
         currentY = 80;
     }
@@ -343,11 +332,159 @@ void PDFReportGenerator::DrawModuleDetails(QPainter& painter, const canproject::
         DrawTableRowCentered(painter, currentY, "计算状态", "✅ 成功", CONTENT_WIDTH);
         DrawTableRowCentered(painter, currentY, "推荐电阻值", QString::number(report.slopeControl.output.recommendedResistor, 'f', 1) + " Ω", CONTENT_WIDTH);
         DrawTableRowCentered(painter, currentY, "实际上升时间", QString::number(report.slopeControl.output.actualRiseTimeNs, 'f', 1) + " ns", CONTENT_WIDTH);
-
-        // 移除推荐工作模式和输入参数部分
     }
 }
 
+
+// 🎯 修改：绘制中继器/网桥/终端电阻表格（删除连接网段列）
+void PDFReportGenerator::DrawBridgeRepeaterTable(QPainter& painter, int& currentY, const canproject::ComprehensiveReport& report) {
+    // 设置表格样式
+    QFont headerFont("Microsoft YaHei", CONTENT_FONT_SIZE - 1, QFont::Bold);
+    QFont contentFont("Microsoft YaHei", CONTENT_FONT_SIZE - 1);
+
+    // 🎯 修改：删除连接网段列，只保留设备类型和位置
+    const int col1Width = 100;  // 设备类型（稍微加宽）
+    const int col2Width = 80;   // 位置X
+    const int col3Width = 80;   // 位置Y
+    const int totalTableWidth = col1Width + col2Width + col3Width;
+
+    int tableX = PAGE_CENTER_X - totalTableWidth / 2;
+
+    // 绘制表头
+    painter.setFont(headerFont);
+    painter.setPen(QColor(70, 70, 150));
+
+    int headerY = currentY;
+    painter.drawText(QRect(tableX, headerY, col1Width, LINE_HEIGHT), Qt::AlignCenter, "设备类型");
+    painter.drawText(QRect(tableX + col1Width, headerY, col2Width, LINE_HEIGHT), Qt::AlignCenter, "位置X");
+    painter.drawText(QRect(tableX + col1Width + col2Width, headerY, col3Width, LINE_HEIGHT), Qt::AlignCenter, "位置Y");
+
+    currentY += LINE_HEIGHT + 5;
+
+    // 绘制分隔线
+    painter.setPen(QPen(QColor(200, 200, 200), 1));
+    painter.drawLine(tableX, currentY - 2, tableX + totalTableWidth, currentY - 2);
+
+    painter.setFont(contentFont);
+    painter.setPen(Qt::black);
+
+    // 🎯 绘制终端电阻数据
+    for (size_t i = 0; i < report.network.output.devices.terminators.size(); ++i) {
+        const auto& terminator = report.network.output.devices.terminators[i];
+
+        // 检查是否需要分页
+        if (CheckNewPage(currentY, LINE_HEIGHT + 5)) {
+            printer.newPage();
+            currentY = 80;
+            // 重新绘制表头
+            headerY = currentY;
+            painter.setFont(headerFont);
+            painter.setPen(QColor(70, 70, 150));
+            painter.drawText(QRect(tableX, headerY, col1Width, LINE_HEIGHT), Qt::AlignCenter, "设备类型");
+            painter.drawText(QRect(tableX + col1Width, headerY, col2Width, LINE_HEIGHT), Qt::AlignCenter, "位置X");
+            painter.drawText(QRect(tableX + col1Width + col2Width, headerY, col3Width, LINE_HEIGHT), Qt::AlignCenter, "位置Y");
+            currentY += LINE_HEIGHT + 5;
+            painter.setPen(QPen(QColor(200, 200, 200), 1));
+            painter.drawLine(tableX, currentY - 2, tableX + totalTableWidth, currentY - 2);
+            painter.setFont(contentFont);
+            painter.setPen(Qt::black);
+        }
+
+        painter.drawText(QRect(tableX, currentY, col1Width, LINE_HEIGHT), Qt::AlignCenter, "终端电阻");
+        painter.drawText(QRect(tableX + col1Width, currentY, col2Width, LINE_HEIGHT), Qt::AlignCenter, QString::number(terminator.first, 'f', 2));
+        painter.drawText(QRect(tableX + col1Width + col2Width, currentY, col3Width, LINE_HEIGHT), Qt::AlignCenter, QString::number(terminator.second, 'f', 2));
+
+        currentY += LINE_HEIGHT + 3;
+    }
+
+    // 🎯 绘制中继器数据
+    for (size_t i = 0; i < report.network.output.devices.repeaters.size(); ++i) {
+        const auto& repeater = report.network.output.devices.repeaters[i];
+
+        // 检查是否需要分页
+        if (CheckNewPage(currentY, LINE_HEIGHT + 5)) {
+            printer.newPage();
+            currentY = 80;
+            // 重新绘制表头
+            headerY = currentY;
+            painter.setFont(headerFont);
+            painter.setPen(QColor(70, 70, 150));
+            painter.drawText(QRect(tableX, headerY, col1Width, LINE_HEIGHT), Qt::AlignCenter, "设备类型");
+            painter.drawText(QRect(tableX + col1Width, headerY, col2Width, LINE_HEIGHT), Qt::AlignCenter, "位置X");
+            painter.drawText(QRect(tableX + col1Width + col2Width, headerY, col3Width, LINE_HEIGHT), Qt::AlignCenter, "位置Y");
+            currentY += LINE_HEIGHT + 5;
+            painter.setPen(QPen(QColor(200, 200, 200), 1));
+            painter.drawLine(tableX, currentY - 2, tableX + totalTableWidth, currentY - 2);
+            painter.setFont(contentFont);
+            painter.setPen(Qt::black);
+        }
+
+        painter.drawText(QRect(tableX, currentY, col1Width, LINE_HEIGHT), Qt::AlignCenter, "中继器");
+        painter.drawText(QRect(tableX + col1Width, currentY, col2Width, LINE_HEIGHT), Qt::AlignCenter, QString::number(repeater.first, 'f', 2));
+        painter.drawText(QRect(tableX + col1Width + col2Width, currentY, col3Width, LINE_HEIGHT), Qt::AlignCenter, QString::number(repeater.second, 'f', 2));
+
+        currentY += LINE_HEIGHT + 3;
+    }
+
+    // 🎯 绘制网桥数据
+    for (size_t i = 0; i < report.network.output.devices.bridges.size(); ++i) {
+        const auto& bridge = report.network.output.devices.bridges[i];
+
+        // 检查是否需要分页
+        if (CheckNewPage(currentY, LINE_HEIGHT + 5)) {
+            printer.newPage();
+            currentY = 80;
+            // 重新绘制表头
+            headerY = currentY;
+            painter.setFont(headerFont);
+            painter.setPen(QColor(70, 70, 150));
+            painter.drawText(QRect(tableX, headerY, col1Width, LINE_HEIGHT), Qt::AlignCenter, "设备类型");
+            painter.drawText(QRect(tableX + col1Width, headerY, col2Width, LINE_HEIGHT), Qt::AlignCenter, "位置X");
+            painter.drawText(QRect(tableX + col1Width + col2Width, headerY, col3Width, LINE_HEIGHT), Qt::AlignCenter, "位置Y");
+            currentY += LINE_HEIGHT + 5;
+            painter.setPen(QPen(QColor(200, 200, 200), 1));
+            painter.drawLine(tableX, currentY - 2, tableX + totalTableWidth, currentY - 2);
+            painter.setFont(contentFont);
+            painter.setPen(Qt::black);
+        }
+
+        painter.drawText(QRect(tableX, currentY, col1Width, LINE_HEIGHT), Qt::AlignCenter, "网桥");
+        painter.drawText(QRect(tableX + col1Width, currentY, col2Width, LINE_HEIGHT), Qt::AlignCenter, QString::number(bridge.first, 'f', 2));
+        painter.drawText(QRect(tableX + col1Width + col2Width, currentY, col3Width, LINE_HEIGHT), Qt::AlignCenter, QString::number(bridge.second, 'f', 2));
+
+        currentY += LINE_HEIGHT + 3;
+    }
+
+    // 如果没有任何设备，显示提示信息
+    if (report.network.output.devices.terminators.empty() &&
+        report.network.output.devices.repeaters.empty() &&
+        report.network.output.devices.bridges.empty()) {
+        painter.drawText(QRect(tableX, currentY, totalTableWidth, LINE_HEIGHT),
+                         Qt::AlignCenter, "无网络设备配置");
+        currentY += LINE_HEIGHT + 3;
+    }
+}
+
+
+// 🎯 添加：确定设备连接的网段
+QString PDFReportGenerator::DetermineConnectedSegments(const std::pair<double, double>& devicePos, const canproject::ComprehensiveReport& report) {
+    QStringList connectedSegments;
+
+    for (size_t i = 0; i < report.network.output.segments.size(); ++i) {
+        const auto& segment = report.network.output.segments[i];
+
+        // 计算设备到线段起点和终点的距离
+        double distToStart = sqrt(pow(devicePos.first - segment.startX, 2) + pow(devicePos.second - segment.startY, 2));
+        double distToEnd = sqrt(pow(devicePos.first - segment.endX, 2) + pow(devicePos.second - segment.endY, 2));
+
+        // 如果距离小于阈值，认为设备连接该网段
+        if (distToStart < 15.0 || distToEnd < 15.0) {
+            connectedSegments.append(QString::number(segment.id));
+        }
+    }
+
+    return connectedSegments.isEmpty() ? "未知" : connectedSegments.join(", ");
+}
 
 // ==================== 🎯 辅助函数实现 ====================
 

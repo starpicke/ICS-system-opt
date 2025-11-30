@@ -16,6 +16,7 @@
 #include <limits>
 #include <sstream>
 #include <stdexcept>
+#include <QDebug>
 
 namespace canopt1 {
 
@@ -73,17 +74,23 @@ SlopeControlOutput CalculateSlopeControl(const SlopeControlInput& input) {
         const double bitTime_s = 1.0 / static_cast<double>(input.baudrate);
         output.bitTimeNs = bitTime_s * 1e9;
 
+        qDebug() << "波特率" << input.baudrate;
+
         // 2. 确定时间份额数量 (通常取10)
-        const uint32_t timeQuantaPerBit = 10;
+        const uint32_t timeQuantaPerBit = GetTimeQuantaPerBit(input) ;
 
         // 3. 计算目标上升时间 (使用位时间的1/10)
         const double targetRiseTime_s = bitTime_s / timeQuantaPerBit;
         const double targetRiseTimeNs = targetRiseTime_s * 1e9;
         output.targetRiseTimeNs = targetRiseTimeNs;
 
+        qDebug() << "位时间" << bitTime_s;
+
         // 4. 计算所需信号斜率 (V/μs)
         const double canSignalSwing = 3.0; // CAN差分信号典型摆幅3V
         const double requiredSlope_VperUs = canSignalSwing / (targetRiseTimeNs / 1000.0);
+        qDebug() << "信号斜率" << requiredSlope_VperUs;
+
 
         // 5. 根据斜率查找对应电阻值
         output.recommendedResistorOhm = FindResistorForSlope(requiredSlope_VperUs);
@@ -493,6 +500,16 @@ SlopeControlOutput CalculateSlopeControl(const SlopeControlInput& input) {
         out.statusMessage = status.str();
 
         return out;
+    }
+    // 获取时间份额数量的函数
+    static uint32_t GetTimeQuantaPerBit(const SlopeControlInput& input) {
+        // 如果输入中指定了时间份额，使用指定的值
+        if (input.timeQuantaPerBit > 0) {
+            return input.timeQuantaPerBit;
+        }
+
+        // 否则使用默认值10（CAN标准推荐值）
+        return 10;
     }
 
 } // namespace canopt1

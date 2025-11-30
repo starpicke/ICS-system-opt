@@ -1,3 +1,4 @@
+//NetworkView.cpp
 #include "NetworkView.h"
 #include <QPainter>
 #include <QPainterPath>
@@ -99,35 +100,20 @@ void NetworkView::paintEvent(QPaintEvent *event)
 
     std::vector<QPointF> existingDevices;
 
-    // ===== 绘制网段 + 中继器 =====
+    // ===== 绘制网段（节点直接连接，无中继器） =====
     painter.setPen(QPen(Qt::blue, 2));
     painter.setBrush(Qt::NoBrush);
 
     for (const auto &seg : result_.segments) {
         for (size_t i = 1; i < seg.node_ids.size(); ++i) {
+
             QPointF a = scalePoint(nodes_[seg.node_ids[i-1]], minX, minY, scale, margin);
             QPointF b = scalePoint(nodes_[seg.node_ids[i]],   minX, minY, scale, margin);
 
-            // 找在当前节点对之间的中继器
-            std::vector<QPointF> repeaters;
-            for (auto &r : result_.devices.repeater_positions) {
-                QPointF rp = scalePoint(QPointF(r.first, r.second), minX, minY, scale, margin);
-                double d1 = std::hypot(rp.x()-a.x(), rp.y()-a.y());
-                double d2 = std::hypot(rp.x()-b.x(), rp.y()-b.y());
-                double segLen = std::hypot(b.x()-a.x(), b.y()-a.y());
-                if (std::abs(d1 + d2 - segLen) < 1e-3) repeaters.push_back(rp);
-            }
-
-            // 绘制：节点 → 中继器 → 节点
-            std::vector<QPointF> drawPts = {a};
-            drawPts.insert(drawPts.end(), repeaters.begin(), repeaters.end());
-            drawPts.push_back(b);
-
-            for (size_t j = 1; j < drawPts.size(); ++j)
-                painter.drawPath(createArc(drawPts[j-1], drawPts[j], 30.0));
+            // 直接绘制：节点 → 节点（不要中继器）
+            painter.drawPath(createArc(a, b, 30.0));
         }
     }
-
     // ===== 绘制终端电阻和网桥 =====
     painter.setPen(QPen(Qt::blue, 2));
     painter.setBrush(Qt::NoBrush);
@@ -157,14 +143,19 @@ void NetworkView::paintEvent(QPaintEvent *event)
         // ② 中间段处理（网桥）
         if (si < result_.segments.size() - 1) {
             QPointF segEnd = scalePoint(nodes_[seg.node_ids.back()], minX, minY, scale, margin);
-            QPointF bridgePos = scalePoint(QPointF(result_.devices.bridge_positions[si].first,
-                                                   result_.devices.bridge_positions[si].second),
-                                           minX, minY, scale, margin);
-            bridgePos = adjustDevicePosition(bridgePos, existingDevices, 30.0);
-            existingDevices.push_back(bridgePos);
+            QPointF repeaterPos = scalePoint(
+                QPointF(
+                    result_.devices.repeater_positions[si].first,
+                    result_.devices.repeater_positions[si].second
+                    ),
+                minX, minY, scale, margin
+                );
+
+            repeaterPos = adjustDevicePosition(repeaterPos, existingDevices, 30.0);
+            existingDevices.push_back(repeaterPos);
 
             // 当前段终点 → 网桥
-            painter.drawPath(createArc(segEnd, bridgePos, 30.0));
+            painter.drawPath(createArc(segEnd, repeaterPos, 30.0));
 
             // 当前段终点的终端电阻
             QPointF termEnd = scalePoint(QPointF(result_.devices.terminator_positions[termIndex].first,
@@ -172,7 +163,7 @@ void NetworkView::paintEvent(QPaintEvent *event)
                                          minX, minY, scale, margin);
             termEnd = adjustDevicePosition(termEnd, existingDevices, 30.0);
             existingDevices.push_back(termEnd);
-            painter.drawPath(createArc(bridgePos, termEnd, 30.0));
+            painter.drawPath(createArc(repeaterPos, termEnd, 30.0));
             painter.setBrush(Qt::darkGreen);
             painter.drawRect(termEnd.x()-3, termEnd.y()-3, 6, 6);
             painter.setBrush(Qt::NoBrush);
@@ -180,7 +171,7 @@ void NetworkView::paintEvent(QPaintEvent *event)
 
             // 网桥 → 下一段起点
             QPointF nextSegStart = scalePoint(nodes_[result_.segments[si+1].node_ids[0]], minX, minY, scale, margin);
-            painter.drawPath(createArc(bridgePos, nextSegStart, 30.0));
+            painter.drawPath(createArc(repeaterPos, nextSegStart, 30.0));
 
             // 下一段起点终端电阻
             QPointF nextTerm = scalePoint(QPointF(result_.devices.terminator_positions[termIndex].first,
@@ -188,7 +179,7 @@ void NetworkView::paintEvent(QPaintEvent *event)
                                           minX, minY, scale, margin);
             nextTerm = adjustDevicePosition(nextTerm, existingDevices, 30.0);
             existingDevices.push_back(nextTerm);
-            painter.drawPath(createArc(bridgePos, nextTerm, 30.0));
+            painter.drawPath(createArc(repeaterPos, nextTerm, 30.0));
             painter.setBrush(Qt::darkGreen);
             painter.drawRect(nextTerm.x()-3, nextTerm.y()-3, 6, 6);
             painter.setBrush(Qt::NoBrush);
@@ -196,7 +187,7 @@ void NetworkView::paintEvent(QPaintEvent *event)
 
             // 绘制网桥
             painter.setBrush(Qt::magenta);
-            painter.drawRect(bridgePos.x()-4, bridgePos.y()-4, 8, 8);
+            painter.drawRect(repeaterPos.x()-4, repeaterPos.y()-4, 8, 8);
             painter.setBrush(Qt::NoBrush);
         }
         // ③ 最后一段终点终端电阻
@@ -217,14 +208,7 @@ void NetworkView::paintEvent(QPaintEvent *event)
         }
     }
 
-    // ===== 绘制中继器 =====
-    painter.setBrush(Qt::blue);
-    for (auto &r : result_.devices.repeater_positions) {
-        QPointF p = scalePoint(QPointF(r.first, r.second), minX, minY, scale, margin);
-        p = adjustDevicePosition(p, existingDevices, 10.0);
-        existingDevices.push_back(p);
-        painter.drawEllipse(p.x()-4, p.y()-4, 8, 8);
-    }
+
 
     // ===== 绘制节点 =====
     painter.setBrush(Qt::red);

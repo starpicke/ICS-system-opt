@@ -16,8 +16,6 @@
 #include "ConfigManager.h"
 #include "ConfigData.h"
 
-
-
 QT_BEGIN_NAMESPACE
 namespace Ui {
 class MainWindow;
@@ -38,8 +36,8 @@ public:
 
 private slots:
     void onBaudDataAdded(const BaudRate &data);
-    void onImportConfigClicked();  // 添加这行
-    void onExportConfigClicked();  // 添加这行
+    void onImportConfigClicked();
+    void onExportConfigClicked();
     void on_DeleteButton_clicked();
     void on_tableView_doubleClicked(const QModelIndex &index);
 
@@ -56,7 +54,6 @@ private slots:
     // 添加节点相关
     void onNodeDataAdded(const NodeInfo &nodeData);
     void on_AddNodebutton_clicked();
-    //
     void on_DeleteNodeButton_clicked();
     void onNodeDoubleClicked(const QModelIndex &index);
     void editNode(int row);
@@ -70,11 +67,10 @@ private slots:
 
     // CAN ID分配与滤波器设计相关槽函数
     void allocateAndDesignButton_clicked();
-    void on_generateReportButton_clicked();
 
     // 设置栏
     void onActionOpen();
-    void onActionSave();
+    void onActionNew();
     void onActionExit();
     void onActionExport();
 
@@ -82,13 +78,25 @@ private slots:
 
     void on_Next2Button_clicked();
 
+    void on_ClearNodeButton_clicked();
+
 private:
+    Ui::MainWindow *ui;  // 🎯 将 ui 放在最前面
 
-    // ... 现有成员变量
-    config::ConfigManager configManager;           // 添加这行
-    config::SystemConfig currentConfig;           // 添加这行
+    // 🎯 按照初始化顺序排列成员变量
+    float m_maxAllowedBaudRate;
+    bool m_baudRateCalculated;
+    float m_maxAllowedSegmentLength;
 
-    // 添加这三个方法
+    // 配置管理
+    config::ConfigManager configManager;
+    config::SystemConfig currentConfig;
+
+    // 网络视图
+    NetworkView* networkView_;
+    QVBoxLayout* networkLayout_;
+
+private:
     void UpdateConfigFromGUI();
     config::SystemConfig CollectConfigFromGUI();
     void ApplyConfigToGUI(const config::SystemConfig& config);
@@ -105,12 +113,6 @@ private:
     std::vector<std::pair<std::string, canopt2::FilterDesignResult>> designFiltersForAllNodes() const;
     std::string generateCompleteReport(const std::vector<std::pair<std::string, canopt2::FilterDesignResult>>& filterResults) const;
 
-    float m_maxAllowedBaudRate;  // 添加这个成员变量
-    bool m_baudRateCalculated;   // 标记是否已计算过波特率
-
-    NetworkView* networkView_;     // 用于显示网络
-    QVBoxLayout* networkLayout_;   // 放置 NetworkView 的布局
-
 private:
     double calculateTotalBitRate();
     double calculateActualLoadPercent();
@@ -122,11 +124,11 @@ private:
     double extractResistanceFromLabel(const QString& labelText);
     QPixmap captureNetworkView();
     QString saveNetworkScreenshot();
-    QString m_currentScreenshotPath; // 添加这个成员变量
+    QString m_currentScreenshotPath;
+
+    void refreshBaudRateTable();  // 🎯 添加缺失的方法声明
 
 private:
-    Ui::MainWindow *ui;
-
     // 信号信息
     AddBaud *m_addBaudDialog;
     QStandardItemModel *m_tableModel;
@@ -139,8 +141,6 @@ private:
     // 网桥中继器表格模型
     QStandardItemModel *m_bridgeModel;
     void updateBridgeTable(const IndustrialNet::DesignResult& result);
-    // QString generateNetworkReport(const IndustrialNet::DesignResult& result,
-    //const std::vector<IndustrialNet::Node>& nodes);
 
     // CAN ID分配结果
     std::vector<canopt2::IdAllocationResult> m_idAllocationResults;
@@ -152,6 +152,9 @@ private:
     void editBaudRate(int row);
     float calculateBusLoad(float baudRate);
     int calculateFrameBits(const BaudRate &data);
+
+    int time_N;
+    int maxalllength;
 };
 
 #endif // MAINWINDOW_H

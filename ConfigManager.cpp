@@ -109,12 +109,12 @@ SystemConfig ConfigManager::CreateDefaultConfig() {
     config.timestamp = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss").toStdString();
 
     // 添加一些默认节点数据
-    config.baudRate.nodeDataList.push_back(NodeDataConfig(1, 0, 8, 10.0f, 1));
-    config.baudRate.nodeDataList.push_back(NodeDataConfig(2, 0, 8, 20.0f, 1));
+    config.baudRate.nodeDataList.push_back(NodeDataConfig(1, 0, 8, 10.0f, 1, "默认消息1"));
+    config.baudRate.nodeDataList.push_back(NodeDataConfig(2, 0, 8, 20.0f, 1, "默认消息2"));
 
     // 添加默认网络节点
-    config.network.nodes.push_back(NetworkNodeConfig(1, 0.0, 0.0));
-    config.network.nodes.push_back(NetworkNodeConfig(2, 50.0, 0.0));
+    config.network.nodes.push_back(NetworkNodeConfig(1, 0.0, 0.0, 120.0, "节点1"));
+    config.network.nodes.push_back(NetworkNodeConfig(2, 50.0, 0.0, 120.0, "节点2"));
 
     return config;
 }
@@ -170,6 +170,9 @@ SystemConfig ConfigManager::DeserializeConfig(const QJsonObject& json) {
 QJsonObject ConfigManager::SerializeBaudRateConfig(const SystemConfig::BaudRateConfig& config) {
     QJsonObject obj;
     obj["desiredLoadPercent"] = config.desiredLoadPercent;
+    obj["theoreticalBaudRate"] = config.theoreticalBaudRate;
+    obj["recommendedBaudRate"] = config.recommendedBaudRate;
+    obj["actualLoad"] = config.actualLoad;
 
     QJsonArray nodesArray;
     for (const auto& node : config.nodeDataList) {
@@ -200,15 +203,23 @@ QJsonObject ConfigManager::SerializeBitTimingConfig(const SystemConfig::BitTimin
     obj["systemClock"] = static_cast<qint64>(config.systemClock);
     obj["targetBaudRate"] = static_cast<qint64>(config.targetBaudRate);
     obj["maxErrorPercent"] = config.maxErrorPercent;
+    obj["brp"] = config.brp;
+    obj["tseg1"] = config.tseg1;
+    obj["tseg2"] = config.tseg2;
+    obj["sjw"] = config.sjw;
+    obj["btrRegister"] = static_cast<qint64>(config.btrRegister);
     return obj;
 }
 
-QJsonObject ConfigManager::SerializeSlopeControlConfig(const SystemConfig::SlopeControlConfig& config) {
+QJsonObject ConfigManager::SerializeSlopeControlConfig(const SlopeControlConfig& config) {
     QJsonObject obj;
     obj["baudrate"] = static_cast<qint64>(config.baudrate);
     obj["targetRiseTimeNs"] = config.targetRiseTimeNs;
     obj["cableLengthMeters"] = config.cableLengthMeters;
     obj["loadCapacitancePf"] = config.loadCapacitancePf;
+    obj["calculatedResistance"] = config.calculatedResistance;
+    obj["actualRiseTime"] = config.actualRiseTime;
+    obj["statusMessage"] = QString::fromStdString(config.statusMessage);
     return obj;
 }
 
@@ -218,6 +229,15 @@ SystemConfig::BaudRateConfig ConfigManager::DeserializeBaudRateConfig(const QJso
 
     if (json.contains("desiredLoadPercent")) {
         config.desiredLoadPercent = json["desiredLoadPercent"].toInt();
+    }
+    if (json.contains("theoreticalBaudRate")) {
+        config.theoreticalBaudRate = json["theoreticalBaudRate"].toDouble();
+    }
+    if (json.contains("recommendedBaudRate")) {
+        config.recommendedBaudRate = json["recommendedBaudRate"].toDouble();
+    }
+    if (json.contains("actualLoad")) {
+        config.actualLoad = json["actualLoad"].toDouble();
     }
 
     if (json.contains("nodes")) {
@@ -265,12 +285,27 @@ SystemConfig::BitTimingConfig ConfigManager::DeserializeBitTimingConfig(const QJ
     if (json.contains("maxErrorPercent")) {
         config.maxErrorPercent = json["maxErrorPercent"].toDouble();
     }
+    if (json.contains("brp")) {
+        config.brp = json["brp"].toInt();
+    }
+    if (json.contains("tseg1")) {
+        config.tseg1 = json["tseg1"].toInt();
+    }
+    if (json.contains("tseg2")) {
+        config.tseg2 = json["tseg2"].toInt();
+    }
+    if (json.contains("sjw")) {
+        config.sjw = json["sjw"].toInt();
+    }
+    if (json.contains("btrRegister")) {
+        config.btrRegister = json["btrRegister"].toVariant().toUInt();
+    }
 
     return config;
 }
 
-SystemConfig::SlopeControlConfig ConfigManager::DeserializeSlopeControlConfig(const QJsonObject& json) {
-    SystemConfig::SlopeControlConfig config;
+SlopeControlConfig ConfigManager::DeserializeSlopeControlConfig(const QJsonObject& json) {
+    SlopeControlConfig config;
 
     if (json.contains("baudrate")) {
         config.baudrate = json["baudrate"].toVariant().toUInt();
@@ -284,6 +319,15 @@ SystemConfig::SlopeControlConfig ConfigManager::DeserializeSlopeControlConfig(co
     if (json.contains("loadCapacitancePf")) {
         config.loadCapacitancePf = json["loadCapacitancePf"].toDouble();
     }
+    if (json.contains("calculatedResistance")) {
+        config.calculatedResistance = json["calculatedResistance"].toDouble();
+    }
+    if (json.contains("actualRiseTime")) {
+        config.actualRiseTime = json["actualRiseTime"].toDouble();
+    }
+    if (json.contains("statusMessage")) {
+        config.statusMessage = json["statusMessage"].toString().toStdString();
+    }
 
     return config;
 }
@@ -296,6 +340,9 @@ QJsonObject ConfigManager::SerializeNodeConfig(const NodeDataConfig& node) {
     obj["dataBytes"] = node.dataBytes;
     obj["sendTimeMs"] = node.sendTimeMs;
     obj["nodeCount"] = node.nodeCount;
+    obj["messageName"] = QString::fromStdString(node.messageName);
+    obj["priority"] = node.priority;           // 新增优先级字段
+    obj["maxLength"] = node.maxLength;         // 新增最大长度字段
     return obj;
 }
 
@@ -305,6 +352,22 @@ QJsonObject ConfigManager::SerializeNetworkNodeConfig(const NetworkNodeConfig& n
     obj["x"] = node.x;
     obj["y"] = node.y;
     obj["inputImpedance"] = node.inputImpedance;
+    obj["nodeName"] = QString::fromStdString(node.nodeName);
+
+    // 序列化发送消息列表
+    QJsonArray sendMessagesArray;
+    for (const auto& msg : node.sendMessages) {
+        sendMessagesArray.append(QString::fromStdString(msg));
+    }
+    obj["sendMessages"] = sendMessagesArray;
+
+    // 序列化接收消息列表
+    QJsonArray receiveMessagesArray;
+    for (const auto& msg : node.receiveMessages) {
+        receiveMessagesArray.append(QString::fromStdString(msg));
+    }
+    obj["receiveMessages"] = receiveMessagesArray;
+
     return obj;
 }
 
@@ -317,6 +380,9 @@ NodeDataConfig ConfigManager::DeserializeNodeConfig(const QJsonObject& json) {
     if (json.contains("dataBytes")) node.dataBytes = json["dataBytes"].toInt();
     if (json.contains("sendTimeMs")) node.sendTimeMs = json["sendTimeMs"].toDouble();
     if (json.contains("nodeCount")) node.nodeCount = json["nodeCount"].toInt();
+    if (json.contains("messageName")) node.messageName = json["messageName"].toString().toStdString();
+    if (json.contains("priority")) node.priority = json["priority"].toInt();           // 新增优先级字段
+    if (json.contains("maxLength")) node.maxLength = json["maxLength"].toDouble();     // 新增最大长度字段
 
     return node;
 }
@@ -328,9 +394,27 @@ NetworkNodeConfig ConfigManager::DeserializeNetworkNodeConfig(const QJsonObject&
     if (json.contains("x")) node.x = json["x"].toDouble();
     if (json.contains("y")) node.y = json["y"].toDouble();
     if (json.contains("inputImpedance")) node.inputImpedance = json["inputImpedance"].toDouble();
+    if (json.contains("nodeName")) node.nodeName = json["nodeName"].toString().toStdString();
+
+    // 反序列化发送消息列表
+    if (json.contains("sendMessages")) {
+        QJsonArray sendArray = json["sendMessages"].toArray();
+        for (const auto& msgValue : sendArray) {
+            node.sendMessages.push_back(msgValue.toString().toStdString());
+        }
+    }
+
+    // 反序列化接收消息列表
+    if (json.contains("receiveMessages")) {
+        QJsonArray receiveArray = json["receiveMessages"].toArray();
+        for (const auto& msgValue : receiveArray) {
+            node.receiveMessages.push_back(msgValue.toString().toStdString());
+        }
+    }
 
     return node;
 }
+
 
 } // namespace config
 

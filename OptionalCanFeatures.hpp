@@ -22,6 +22,7 @@ namespace canopt1 {
 
     struct SlopeControlInput {
         uint32_t baudrate{ 250000 };
+        uint32_t timeQuantaPerBit = 10; // 默认10个时间份额
         double targetRiseTimeNs{ 150.0 };
         double cableLengthMeters{ 50.0 };
         double maxRiseTimeRatio{ 0.1 };
@@ -112,6 +113,7 @@ namespace canopt1 {
     };
 
     FilterDesignOutput DesignMessageFilter(const FilterDesignInput& input);
+    static uint32_t GetTimeQuantaPerBit(const SlopeControlInput& input);
 
     // ============================================================================
     // 统一封装结构体（方案A）
